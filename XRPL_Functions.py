@@ -6,7 +6,7 @@ from xrpl.asyncio.wallet import generate_faucet_wallet
 from xrpl.wallet import Wallet
 from datetime import datetime, timedelta
 from xrpl.models.transactions import Payment, EscrowCreate, TrustSet, OfferCreate, EscrowFinish
-from xrpl.models.requests import AccountLines
+from xrpl.models.requests import AccountLines, ServerState
 from xrpl.asyncio.transaction import submit_and_wait
 from xrpl.utils import xrp_to_drops, datetime_to_ripple_time
 from xrpl.utils import str_to_hex
