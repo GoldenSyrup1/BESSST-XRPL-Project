@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Trustline XRP App</title>
+  <link rel="stylesheet" href="../static/css/app.css" />
+</head>
+<body>
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">✦</div>
+      <a class="brand-name" href="./index.html">Trustline XRP</a>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
+        <span class="nav-icon">⊞</span> Dashboard
+      </button>
+      <div class="nav-section-label">Actions</div>
+      <button class="nav-item" id="nav-trustline" onclick="showPage('trustline')">
+        <span class="nav-icon">⬡</span> Create trust line
+      </button>
+      <button class="nav-item" id="nav-trade" onclick="requireTrustline('trade')">
+        <span class="nav-icon">⇄</span> Create trade
+      </button>
+      <button class="nav-item" id="nav-send" onclick="requireTrustline('send')">
+        <span class="nav-icon">↑</span> Send currency
+      </button>
+      <button class="nav-item" id="nav-auth" onclick="showPage('auth')">
+        <span class="nav-icon">◉</span> Authenticator
+      </button>
+      <div class="nav-section-label">Records</div>
+      <button class="nav-item" id="nav-escrows" onclick="showPage('escrows')">
+        <span class="nav-icon">◷</span> My Escrows
+      </button>
+      <button class="nav-item" id="nav-records" onclick="showPage('records')">
+        <span class="nav-icon">☰</span> View records
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="avatar">U</div>
+      <span class="user-email">user@trustlinexrp.com</span>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main class="main">
+
+    <!-- ─── DASHBOARD ─── -->
+    <div id="page-dashboard" class="page active">
+      <h1>Dashboard</h1>
+      <p class="page-subtitle">Your open offers and recent activity</p>
+
+      <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+        <div>
+          <div class="field-label" style="margin-bottom:4px;">Connected wallet</div>
+          <div style="font-size:13px; font-family:'SF Mono','Fira Code',monospace;">rConnected...abc</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="field-label" style="margin-bottom:4px;">Balance</div>
+          <div style="font-size:16px; font-weight:700;">1,240.50 XRP</div>
+        </div>
+      </div>
+
+      <div class="section-header">
+        <h2>Open Offers</h2>
+        <button class="btn btn-primary btn-sm" onclick="showPage('trade'); resetTrade();">+ New trade</button>
+      </div>
+      <div id="open-offers-list">
+        <div class="empty-state">
+          <div class="empty-icon">⇄</div>
+          No open offers yet.<br/>Create a trade to get started.
+        </div>
+      </div>
+
+      <div class="section-header" style="margin-top:8px;">
+        <h2>Recent Transactions</h2>
+      </div>
+      <div class="card">
+        <div class="info-row"><span class="label">Sent 50 XRP → rXRPL...abc</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
+        <div class="info-row"><span class="label">Escrow created · 200 XRP</span><span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span></div>
+        <div class="info-row"><span class="label">Trust line · USD</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
+      </div>
+    </div>
+
+    <!-- ─── TRADE FLOW ─── -->
+    <div id="page-trade" class="page">
+
+      <div class="gate-banner" id="trade-gate" style="display:none;">
+        <div>
+          <div class="gate-text">⚠ You need a trust line to trade non-XRP currencies</div>
+          <div class="gate-sub">XRP trades work without one. To trade USD, BTC, ETH or other tokens, set up a trust line first.</div>
+        </div>
+        <button class="gate-btn" onclick="showPage('trustline')">Set up trust line →</button>
+      </div>
+
+      <!-- Step 1 -->
+      <div id="trade-screen-1" class="trade-screen">
+        <h1>Create a trade</h1>
+        <p class="page-subtitle">Place an offer on the XRPL DEX</p>
+        <div class="steps">
+          <div class="step active"><div class="step-num">1</div> Create</div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-num">2</div> Pending</div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-num">3</div> Match</div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-num">4</div> Confirm</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Trade details</div>
+          <div class="wallet-bar">
+            <div class="wallet-dot"></div>
+            <span>Trading as:</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">rConnected...abc</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:500;">YOU SELL (TakerGets)</div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">Currency</label>
+              <div class="select-wrapper"><select id="sell-currency" onchange="checkCurrencyGate('trade')"><option>XRP</option><option>USD</option><option>BTC</option><option>ETH</option></select></div>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Amount</label>
+              <input type="number" id="sell-amount" placeholder="0.00" min="0" step="any" />
+            </div>
+          </div>
+          <div class="swap-divider">⇅</div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:500;">YOU BUY (TakerPays)</div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">Currency</label>
+              <div class="select-wrapper"><select id="buy-currency" onchange="checkCurrencyGate('trade')"><option>USD</option><option>XRP</option><option>BTC</option><option>ETH</option></select></div>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Amount</label>
+              <input type="number" id="buy-amount" placeholder="0.00" min="0" step="any" />
+            </div>
+          </div>
+          <button class="btn btn-primary btn-full" style="margin-top:6px;" onclick="goTradeScreen(2)">Submit Trade →</button>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div id="trade-screen-2" class="trade-screen" style="display:none;">
+        <h1>Finding a match</h1>
+        <p class="page-subtitle">Your offer is live on the XRPL DEX</p>
+        <div class="steps">
+          <div class="step done"><div class="step-num">✓</div> Create</div>
+          <div class="step-line"></div>
+          <div class="step active"><div class="step-num">2</div> Pending</div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-num">3</div> Match</div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-num">4</div> Confirm</div>
+        </div>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+            <div class="card-title" style="margin-bottom:0;">Trade Status</div>
+            <span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span>
+          </div>
+          <div class="info-row"><span class="label">Offer ID</span><span class="value" id="s2-offer-id">—</span></div>
+          <div class="info-row"><span class="label">Selling</span><span class="value" id="s2-sell">—</span></div>
+          <div class="info-row"><span class="label">Buying</span><span class="value" id="s2-buy">—</span></div>
+          <div class="info-row"><span class="label">Submitted</span><span class="value" id="s2-time">—</span></div>
+          <div class="info-row"><span class="label">Ledger</span><span class="value" id="s2-ledger">Searching...</span></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Tracking</div>
+          <div class="track-label"><span>DEX match progress</span><span id="track-pct">0%</span></div>
+          <div class="track-bar-bg"><div class="track-bar-fill" id="track-fill"></div></div>
+          <div style="margin-top:14px;">
+            <div class="ledger-stage active-stage" id="stage-0"><div class="stage-icon">→</div><span>Offer submitted to ledger</span></div>
+            <div class="ledger-stage" id="stage-1"><div class="stage-icon">2</div><span>Scanning order book</span></div>
+            <div class="ledger-stage" id="stage-2"><div class="stage-icon">3</div><span>Counterparty located</span></div>
+            <div class="ledger-stage" id="stage-3"><div class="stage-icon">4</div><span>Match confirmed on-chain</span></div>
+          </div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="noMatchFound()">Simulate: No match</button>
+          <button class="btn btn-secondary" onclick="cancelOffer()">Cancel offer</button>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div id="trade-screen-3" class="trade-screen" style="display:none;">
+        <h1>Match found!</h1>
+        <p class="page-subtitle">Review and accept your trade</p>
+        <div class="steps">
+          <div class="step done"><div class="step-num">✓</div> Create</div>
+          <div class="step-line"></div>
+          <div class="step done"><div class="step-num">✓</div> Pending</div>
+          <div class="step-line"></div>
+          <div class="step active"><div class="step-num">3</div> Match</div>
+          <div class="step-line"></div>
+          <div class="step"><div class="step-num">4</div> Confirm</div>
+        </div>
+        <div class="match-highlight">
+          <div class="match-title">✓ Counterparty matched</div>
+          <div class="match-rate" id="match-rate">—</div>
+          <div class="match-sub">Best available rate on the DEX</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Trade Summary</div>
+          <div class="info-row"><span class="label">Trade ID</span><span class="value" id="match-id">—</span></div>
+          <div class="info-row"><span class="label">You send</span><span class="value" id="match-sell">—</span></div>
+          <div class="info-row"><span class="label">You receive</span><span class="value" id="match-buy">—</span></div>
+          <div class="info-row"><span class="label">Counterparty</span><span class="value">rXRPL...match42</span></div>
+          <div class="info-row"><span class="label">Fee</span><span class="value">12 drops (auto)</span></div>
+          <div class="info-row"><span class="label">Status</span><span class="badge badge-matched"><span class="badge-dot"></span> Ready</span></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="cancelOffer()">Decline</button>
+          <button class="btn btn-primary" onclick="goTradeScreen(4)">Accept Trade →</button>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div id="trade-screen-4" class="trade-screen" style="display:none;">
+        <h1>Trade complete</h1>
+        <p class="page-subtitle">Your transaction has settled on the XRPL</p>
+        <div class="steps">
+          <div class="step done"><div class="step-num">✓</div> Create</div>
+          <div class="step-line"></div>
+          <div class="step done"><div class="step-num">✓</div> Pending</div>
+          <div class="step-line"></div>
+          <div class="step done"><div class="step-num">✓</div> Match</div>
+          <div class="step-line"></div>
+          <div class="step active"><div class="step-num">4</div> Confirm</div>
+        </div>
+        <div class="card" style="text-align:center;">
+          <div class="confirm-icon">✓</div>
+          <div style="font-size:17px;font-weight:700;margin-bottom:6px;">Transaction Settled</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:18px;">Funds exchanged and in your wallet.</div>
+          <div style="text-align:left;margin-bottom:6px;"><label class="field-label">Transaction Hash</label></div>
+          <div class="hash-box" id="tx-hash" onclick="copyHash()">—</div>
+          <div class="copy-hint">Click to copy</div>
+          <div class="info-row"><span class="label">You sent</span><span class="value" id="confirm-sell">—</span></div>
+          <div class="info-row"><span class="label">You received</span><span class="value" id="confirm-buy">—</span></div>
+          <div class="info-row"><span class="label">Ledger index</span><span class="value" id="confirm-ledger">—</span></div>
+          <div class="info-row"><span class="label">Status</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-secondary" onclick="showPage('dashboard')">← Dashboard</button>
+          <button class="btn btn-primary" onclick="resetTrade(); goTradeScreen(1);">New Trade</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ─── SEND ─── -->
+    <div id="page-send" class="page">
+
+      <div class="gate-banner" id="send-gate" style="display:none;">
+        <div>
+          <div class="gate-text">⚠ You need a trust line to send non-XRP currencies</div>
+          <div class="gate-sub">Sending XRP works without one. To send USD, BTC, ETH or other tokens, set up a trust line first.</div>
+        </div>
+        <button class="gate-btn" onclick="showPage('trustline')">Set up trust line →</button>
+      </div>
+
+      <h1>Send a currency</h1>
+      <p class="page-subtitle">Instant payment on the XRPL</p>
+      <div class="card">
+        <div class="card-title">Instant Send</div>
+        <div class="wallet-bar">
+          <div class="wallet-dot"></div>
+          <span>Sending from:</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">rConnected...abc</span>
+        </div>
+        <div class="field-group">
+          <label class="field-label">Destination Account</label>
+          <input type="text" placeholder="r... wallet address" />
+        </div>
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">Currency</label>
+            <div class="select-wrapper"><select id="send-currency" onchange="checkCurrencyGate('send')"><option>XRP</option><option>USD</option><option>BTC</option></select></div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Amount</label>
+            <input type="number" placeholder="0.00" min="0" step="any" />
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full">Submit</button>
+      </div>
+    </div>
+
+    <!-- ─── TRUST LINE ─── -->
+    <div id="page-trustline" class="page">
+      <h1>Create a trust line</h1>
+      <p class="page-subtitle">Allow your wallet to hold a non-XRP token</p>
+
+      <!-- Progress steps -->
+      <div class="steps" style="margin-bottom:24px;">
+        <div class="step active" id="tl-prog-1"><div class="step-num">1</div> Details</div>
+        <div class="step-line"></div>
+        <div class="step" id="tl-prog-2"><div class="step-num">2</div> Verify issuer</div>
+        <div class="step-line"></div>
+        <div class="step" id="tl-prog-3"><div class="step-num">3</div> Confirmed</div>
+      </div>
+
+      <!-- ── STEP 1: Fill in details ── -->
+      <div id="tl-step-1">
+        <div class="card">
+          <div class="card-title">Trust line details</div>
+          <div class="wallet-bar">
+            <div class="wallet-dot"></div>
+            <span>Wallet:</span>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">rConnected...abc</span>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Issuer Address</label>
+            <input type="text" id="tl-issuer" placeholder="r... issuer address" />
+          </div>
+          <div class="field-row">
+            <div class="field-group">
+              <label class="field-label">Currency Code</label>
+              <input type="text" id="tl-currency" placeholder="USD" maxlength="3" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Limit</label>
+              <input type="number" id="tl-limit" placeholder="1000000" min="0" step="any" />
+            </div>
+          </div>
+          <button class="btn btn-primary btn-full" onclick="tlGoToVerify()">Check issuer first →</button>
+        </div>
+
+        <div style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px;">
+          We'll verify the issuer address before you commit to the trust line.
+        </div>
+      </div>
+
+      <!-- ── STEP 2: Issuer check + back out or confirm ── -->
+      <div id="tl-step-2" style="display:none;">
+
+        <div class="card" style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <div class="card-title" style="margin-bottom:0;">Issuer Verification</div>
+            <span class="badge badge-pending" id="tl-verify-badge"><span class="badge-dot pulse"></span> Checking...</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">
+            Checking <span id="tl-verify-issuer-display" style="font-family:monospace;color:var(--text);"></span>
+            for <span id="tl-verify-currency-display" style="font-weight:600;"></span>
+          </div>
+
+          <!-- Loading skeleton -->
+          <div id="tl-verify-loading">
+            <div class="auth-skeleton">
+              <div class="skel med"></div>
+              <div class="skel short"></div>
+              <div class="skel med"></div>
+              <div class="skel short"></div>
+            </div>
+          </div>
+
+          <!-- Check results -->
+          <div id="tl-verify-results" style="display:none;">
+            <div class="auth-check-row">
+              <div class="auth-check-icon" id="tl-v-validity-icon">◉</div>
+              <div class="auth-check-body">
+                <div class="auth-check-title">Issuer Exists</div>
+                <!-- BACKEND: response.valid — does this account exist on ledger? -->
+                <div class="auth-check-desc" id="tl-v-validity-desc">—</div>
+              </div>
+            </div>
+            <div class="auth-check-row">
+              <div class="auth-check-icon" id="tl-v-blacklist-icon">◎</div>
+              <div class="auth-check-body">
+                <div class="auth-check-title">Blacklist Status</div>
+                <!-- BACKEND: response.blacklisted — known scam issuer? -->
+                <div class="auth-check-desc" id="tl-v-blacklist-desc">—</div>
+              </div>
+            </div>
+            <div class="auth-check-row">
+              <div class="auth-check-icon" id="tl-v-age-icon">◷</div>
+              <div class="auth-check-body">
+                <div class="auth-check-title">Issuer Account Age</div>
+                <!-- BACKEND: response.age_months — is this a long-standing issuer? -->
+                <div class="auth-check-desc" id="tl-v-age-desc">—</div>
+              </div>
+            </div>
+            <div class="auth-check-row">
+              <div class="auth-check-icon" id="tl-v-currency-icon">⬡</div>
+              <div class="auth-check-body">
+                <div class="auth-check-title">Currency Issued</div>
+                <!-- BACKEND: response.issues_currency — does this issuer actually issue this token? -->
+                <div class="auth-check-desc" id="tl-v-currency-desc">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Overall verdict + action -->
+        <div id="tl-verify-verdict" style="display:none;">
+          <div class="auth-overall safe" id="tl-verdict-box">
+            <div class="auth-overall-icon" id="tl-verdict-icon">—</div>
+            <div>
+              <div class="auth-overall-title" id="tl-verdict-title">—</div>
+              <div class="auth-overall-desc" id="tl-verdict-desc">—</div>
+            </div>
+          </div>
+
+          <div class="btn-row" style="margin-top:12px;">
+            <button class="btn btn-secondary" onclick="tlBackOut()">← Back out</button>
+            <button class="btn btn-primary" id="tl-confirm-btn" onclick="tlConfirm()">Confirm trust line →</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;" id="tl-confirm-warning"></div>
+        </div>
+
+      </div>
+
+      <!-- ── STEP 3: Confirmed + destination check ── -->
+      <div id="tl-step-3" style="display:none;">
+
+        <div class="card" style="text-align:center;padding:24px;">
+          <div style="width:44px;height:44px;border-radius:50%;background:#dcfce7;border:1px solid #bbf7d0;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:20px;color:#166534;">✓</div>
+          <div style="font-size:16px;font-weight:700;margin-bottom:4px;">Trust Line Active</div>
+          <div style="font-size:13px;color:var(--muted);">
+            <span id="tl-confirm-currency">USD</span> trust line set with issuer
+            <span id="tl-confirm-issuer" style="font-family:monospace;">r...abc</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Now verify your destination</div>
+          <div style="font-size:13px;color:var(--muted);margin-bottom:14px;">
+            Before you trade or send, check the destination address — including whether they have a trust line for <span id="tl-dest-currency" style="font-weight:600;">your currency</span>.
+          </div>
+
+          <div class="auth-input-area">
+            <input type="text" id="tl-auth-input" placeholder="Paste destination address e.g. rXRPL..." />
+            <button class="auth-check-btn" onclick="runTlAuthCheck()">Check →</button>
+          </div>
+
+          <!-- BACKEND HOOK POINT
+               POST /api/check-address
+               Body: { "address": "rXRPL...", "currency": "USD", "issuer": "r..." }
+               Returns: { valid, age_months, blacklisted, tx_count, has_trustline, risk }
+          -->
+
+          <div id="tl-auth-loading" style="display:none;">
+            <div class="auth-skeleton" style="margin-top:12px;">
+              <div class="skel med"></div><div class="skel short"></div>
+              <div class="skel med"></div><div class="skel short"></div>
+            </div>
+          </div>
+
+          <div id="tl-auth-result" class="auth-result">
+            <div style="margin-top:14px;">
+              <div class="auth-check-row">
+                <div class="auth-check-icon" id="tl-chk-validity-icon">◉</div>
+                <div class="auth-check-body">
+                  <div class="auth-check-title">Address Validity</div>
+                  <div class="auth-check-desc" id="tl-chk-validity-desc">—</div>
+                </div>
+              </div>
+              <div class="auth-check-row">
+                <div class="auth-check-icon" id="tl-chk-age-icon">◷</div>
+                <div class="auth-check-body">
+                  <div class="auth-check-title">Account Age</div>
+                  <div class="auth-check-desc" id="tl-chk-age-desc">—</div>
+                </div>
+              </div>
+              <div class="auth-check-row">
+                <div class="auth-check-icon" id="tl-chk-blacklist-icon">◎</div>
+                <div class="auth-check-body">
+                  <div class="auth-check-title">Blacklist Status</div>
+                  <div class="auth-check-desc" id="tl-chk-blacklist-desc">—</div>
+                </div>
+              </div>
+              <div class="auth-check-row">
+                <div class="auth-check-icon" id="tl-chk-activity-icon">≡</div>
+                <div class="auth-check-body">
+                  <div class="auth-check-title">Transaction Activity</div>
+                  <div class="auth-check-desc" id="tl-chk-activity-desc">—</div>
+                </div>
+              </div>
+              <div class="auth-check-row">
+                <div class="auth-check-icon" id="tl-chk-trustline-icon">⬡</div>
+                <div class="auth-check-body">
+                  <div class="auth-check-title">Trust Line Check <span id="tl-chk-trustline-currency" style="font-weight:400;color:var(--muted);"></span></div>
+                  <div class="auth-check-desc" id="tl-chk-trustline-desc">—</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="auth-overall safe" id="tl-auth-overall" style="margin-top:4px;">
+              <div class="auth-overall-icon" id="tl-auth-overall-icon">—</div>
+              <div>
+                <div class="auth-overall-title" id="tl-auth-overall-title">Overall Safety</div>
+                <div class="auth-overall-desc" id="tl-auth-overall-desc">Run a check to see results.</div>
+              </div>
+            </div>
+
+            <div class="btn-row" style="margin-top:14px;">
+              <button class="btn btn-secondary" onclick="showPage('trade'); resetTrade();">Go to Trade →</button>
+              <button class="btn btn-secondary" onclick="showPage('send');">Go to Send →</button>
+            </div>
+
+            <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:center;">
+              Scaffold only — connect Python backend to replace simulated results.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <!-- ─── ESCROW VIEWER ─── -->
+    <div id="page-escrows" class="page">
+      <h1>My Escrows</h1>
+      <p class="page-subtitle">All locked payments from your wallet</p>
+
+      <!-- Summary tiles -->
+      <div class="escrow-summary-bar">
+        <div class="summary-tile">
+          <div class="tile-label">Total locked</div>
+          <div class="tile-value">650 XRP</div>
+          <div class="tile-sub">across 3 escrows</div>
+        </div>
+        <div class="summary-tile">
+          <div class="tile-label">Claimable now</div>
+          <div class="tile-value">200 XRP</div>
+          <div class="tile-sub">1 escrow ready</div>
+        </div>
+        <div class="summary-tile">
+          <div class="tile-label">Expiring soon</div>
+          <div class="tile-value">1</div>
+          <div class="tile-sub">within 7 days</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filter-row">
+        <button class="filter-btn active" onclick="filterEscrows('all', this)">All</button>
+        <button class="filter-btn" onclick="filterEscrows('pending', this)">Pending</button>
+        <button class="filter-btn" onclick="filterEscrows('claimable', this)">Claimable</button>
+        <button class="filter-btn" onclick="filterEscrows('expired', this)">Expired</button>
+      </div>
+
+      <!-- Escrow list -->
+      <div id="escrow-list">
+
+        <!-- Escrow 1: Pending -->
+        <div class="escrow-row" data-status="pending" onclick="toggleEscrow(this)">
+          <div class="escrow-row-top">
+            <div class="escrow-row-left">
+              <div class="escrow-row-id">ESC-A3F8C2 · Sequence #104</div>
+              <div class="escrow-row-amount">300 XRP</div>
+              <div class="escrow-row-dest">To: rXRPL...dest01</div>
+            </div>
+            <div class="escrow-row-right">
+              <span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span>
+              <span class="escrow-chevron">▾</span>
+            </div>
+          </div>
+          <div class="escrow-row-detail">
+            <div class="detail-grid">
+              <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">300 XRP</div></div>
+              <div class="detail-cell"><div class="detail-label">Destination</div><div class="detail-value">rXRPL...dest01</div></div>
+              <div class="detail-cell"><div class="detail-label">Finish After</div><div class="detail-value">Mar 15, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Cancel After</div><div class="detail-value">Apr 15, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Created</div><div class="detail-value">Feb 28, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Fee paid</div><div class="detail-value">12 drops</div></div>
+            </div>
+            <div class="progress-section">
+              <div class="progress-label"><span>Time until claimable</span><span>15 days remaining</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:10%;"></div></div>
+            </div>
+            <div class="escrow-actions">
+              <button class="btn-sm" onclick="event.stopPropagation()">Cancel escrow</button>
+              <button class="btn-sm" style="color:var(--muted);" onclick="event.stopPropagation()">View on ledger</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Escrow 2: Claimable -->
+        <div class="escrow-row" data-status="claimable" onclick="toggleEscrow(this)">
+          <div class="escrow-row-top">
+            <div class="escrow-row-left">
+              <div class="escrow-row-id">ESC-B91D44 · Sequence #98</div>
+              <div class="escrow-row-amount">200 XRP</div>
+              <div class="escrow-row-dest">To: rXRPL...dest02</div>
+            </div>
+            <div class="escrow-row-right">
+              <span class="badge badge-matched"><span class="badge-dot"></span> Claimable</span>
+              <span class="escrow-chevron">▾</span>
+            </div>
+          </div>
+          <div class="escrow-row-detail">
+            <div class="detail-grid">
+              <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">200 XRP</div></div>
+              <div class="detail-cell"><div class="detail-label">Destination</div><div class="detail-value">rXRPL...dest02</div></div>
+              <div class="detail-cell"><div class="detail-label">Finish After</div><div class="detail-value">Feb 20, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Cancel After</div><div class="detail-value">Mar 20, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Created</div><div class="detail-value">Jan 20, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Fee paid</div><div class="detail-value">12 drops</div></div>
+            </div>
+            <div class="progress-section">
+              <div class="progress-label"><span>Status</span><span>Ready to claim</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:100%; background:var(--green);"></div></div>
+            </div>
+            <div class="escrow-actions">
+              <button class="btn-sm primary" onclick="event.stopPropagation()">Claim XRP</button>
+              <button class="btn-sm" onclick="event.stopPropagation()">Cancel escrow</button>
+              <button class="btn-sm" style="color:var(--muted);" onclick="event.stopPropagation()">View on ledger</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Escrow 3: Pending expiring soon -->
+        <div class="escrow-row" data-status="pending" onclick="toggleEscrow(this)">
+          <div class="escrow-row-top">
+            <div class="escrow-row-left">
+              <div class="escrow-row-id">ESC-C02E71 · Sequence #112</div>
+              <div class="escrow-row-amount">150 XRP</div>
+              <div class="escrow-row-dest">To: rXRPL...dest03</div>
+            </div>
+            <div class="escrow-row-right">
+              <span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span>
+              <span class="escrow-chevron">▾</span>
+            </div>
+          </div>
+          <div class="escrow-row-detail">
+            <div class="detail-grid">
+              <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">150 XRP</div></div>
+              <div class="detail-cell"><div class="detail-label">Destination</div><div class="detail-value">rXRPL...dest03</div></div>
+              <div class="detail-cell"><div class="detail-label">Finish After</div><div class="detail-value">Mar 5, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Cancel After</div><div class="detail-value">Mar 7, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Created</div><div class="detail-value">Feb 25, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Fee paid</div><div class="detail-value">12 drops</div></div>
+            </div>
+            <div class="progress-section">
+              <div class="progress-label"><span>Time until claimable</span><span style="color:#854d0e; font-weight:500;">5 days — expiring soon!</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:72%; background:#f59e0b;"></div></div>
+            </div>
+            <div class="escrow-actions">
+              <button class="btn-sm" onclick="event.stopPropagation()">Cancel escrow</button>
+              <button class="btn-sm" style="color:var(--muted);" onclick="event.stopPropagation()">View on ledger</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Escrow 4: Expired -->
+        <div class="escrow-row" data-status="expired" onclick="toggleEscrow(this)">
+          <div class="escrow-row-top">
+            <div class="escrow-row-left">
+              <div class="escrow-row-id">ESC-D44A09 · Sequence #87</div>
+              <div class="escrow-row-amount">500 XRP</div>
+              <div class="escrow-row-dest">To: rXRPL...dest04</div>
+            </div>
+            <div class="escrow-row-right">
+              <span class="badge badge-expired"><span class="badge-dot"></span> Expired</span>
+              <span class="escrow-chevron">▾</span>
+            </div>
+          </div>
+          <div class="escrow-row-detail">
+            <div class="detail-grid">
+              <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">500 XRP</div></div>
+              <div class="detail-cell"><div class="detail-label">Destination</div><div class="detail-value">rXRPL...dest04</div></div>
+              <div class="detail-cell"><div class="detail-label">Finish After</div><div class="detail-value">Jan 1, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Cancel After</div><div class="detail-value">Feb 1, 2026</div></div>
+              <div class="detail-cell"><div class="detail-label">Created</div><div class="detail-value">Dec 1, 2025</div></div>
+              <div class="detail-cell"><div class="detail-label">Fee paid</div><div class="detail-value">12 drops</div></div>
+            </div>
+            <div class="progress-section">
+              <div class="progress-label"><span>Status</span><span style="color:#991b1b;">Cancel window has passed</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:100%; background:#fca5a5;"></div></div>
+            </div>
+            <div class="escrow-actions">
+              <button class="btn-sm" style="color:var(--muted);" onclick="event.stopPropagation()">View on ledger</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ─── RECORDS ─── -->
+    <div id="page-records" class="page">
+      <h1>View records</h1>
+      <p class="page-subtitle">All transactions from your wallet</p>
+      <div class="card">
+        <div class="info-row"><span class="label">Trade · 100 XRP → 250 USD</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
+        <div class="info-row"><span class="label">Send · 50 XRP → rXRPL...abc</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
+        <div class="info-row"><span class="label">Escrow · 200 XRP locked</span><span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span></div>
+        <div class="info-row"><span class="label">Trust line · USD</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
+        <div class="info-row"><span class="label">Trade · 30 XRP → 80 USD</span><span class="badge badge-open"><span class="badge-dot"></span> Open</span></div>
+      </div>
+    </div>
+
+    <!-- ─── AUTHENTICATOR ─── -->
+    <div id="page-auth" class="page">
+      <h1>Authenticator</h1>
+      <p class="page-subtitle">Check if a wallet address is safe before sending funds</p>
+
+      <div class="card">
+        <div class="card-title">Check an address</div>
+        <div class="auth-input-area">
+          <input type="text" id="auth-input" placeholder="Paste a wallet address e.g. rXRPL..." />
+          <button class="auth-check-btn" onclick="runAuthCheck()">Check →</button>
+        </div>
+        <div style="font-size:11px; color:var(--muted);">We check address validity, account age, and blacklist databases.</div>
+      </div>
+
+      <!-- Loading skeleton (hidden by default) -->
+      <div id="auth-loading" style="display:none;" class="card">
+        <div class="auth-skeleton">
+          <div class="skel med"></div>
+          <div class="skel short"></div>
+          <div class="skel med"></div>
+          <div class="skel short"></div>
+        </div>
+      </div>
+
+      <!-- Results (hidden until check runs) -->
+      <div id="auth-result" class="auth-result">
+
+        <div class="card">
+          <div class="card-title">Address Checks</div>
+
+          <div class="auth-check-row">
+            <div class="auth-check-icon" id="chk-validity-icon">◉</div>
+            <div class="auth-check-body">
+              <div class="auth-check-title">Address Validity</div>
+              <div class="auth-check-desc" id="chk-validity-desc">Checking if this address exists on the XRPL ledger...</div>
+            </div>
+          </div>
+
+          <div class="auth-check-row">
+            <div class="auth-check-icon" id="chk-age-icon">◷</div>
+            <div class="auth-check-body">
+              <div class="auth-check-title">Account Age</div>
+              <div class="auth-check-desc" id="chk-age-desc">Checking when this account was first activated...</div>
+            </div>
+          </div>
+
+          <div class="auth-check-row">
+            <div class="auth-check-icon" id="chk-blacklist-icon">◎</div>
+            <div class="auth-check-body">
+              <div class="auth-check-title">Blacklist Status</div>
+              <div class="auth-check-desc" id="chk-blacklist-desc">Cross-referencing against known scam and fraud databases...</div>
+            </div>
+          </div>
+
+          <div class="auth-check-row">
+            <div class="auth-check-icon" id="chk-activity-icon">≡</div>
+            <div class="auth-check-body">
+              <div class="auth-check-title">Transaction Activity</div>
+              <div class="auth-check-desc" id="chk-activity-desc">Reviewing on-chain transaction history...</div>
+            </div>
+          </div>
+
+          <div class="auth-check-row">
+            <div class="auth-check-icon" id="chk-trustline-icon">⬡</div>
+            <div class="auth-check-body">
+              <div class="auth-check-title">Trust Line Check <span id="chk-trustline-currency" style="font-weight:400; color:var(--muted);"></span></div>
+              <!-- BACKEND: check if recipient has trust line for the currency you want to send -->
+              <!-- Query: GET /account_lines?account={address} — look for matching currency+issuer -->
+              <div class="auth-check-desc" id="chk-trustline-desc">Enter an address above to check trust lines.</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Overall safety -->
+        <div class="auth-overall safe" id="auth-overall">
+          <div class="auth-overall-icon" id="auth-overall-icon">—</div>
+          <div>
+            <div class="auth-overall-title" id="auth-overall-title">Overall Safety Estimate</div>
+            <div class="auth-overall-desc" id="auth-overall-desc">Run a check to see results.</div>
+          </div>
+        </div>
+
+        <div style="margin-top:14px; font-size:11px; color:var(--muted); text-align:center; line-height:1.6;">
+          This is a scaffold — backend checks will be connected later.<br/>Results shown are simulated for demonstration purposes.
+        </div>
+      </div>
+
+    </div>
+
+
+  </main>
+
+  <script src="../static/js/app.js"></script>
+</body>
+</html>
