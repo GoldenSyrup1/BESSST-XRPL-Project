@@ -12,7 +12,7 @@
   <aside class="sidebar">
     <div class="sidebar-brand">
       <div class="brand-icon">✦</div>
-      <a class="brand-name" href="./index.html">Trustline XRP</a>
+      <button class="brand-name brand-home" type="button" onclick="showPage('dashboard')">Trustline XRP</button>
     </div>
     <nav class="sidebar-nav">
       <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
@@ -38,10 +38,17 @@
       <button class="nav-item" id="nav-records" onclick="showPage('records')">
         <span class="nav-icon">☰</span> View records
       </button>
+      <div class="nav-section-label">Wallet</div>
+      <button class="nav-item" id="nav-wallet" onclick="showPage('wallet')">
+        <span class="nav-icon">◈</span> My Wallet
+      </button>
     </nav>
     <div class="sidebar-footer">
-      <div class="avatar">U</div>
-      <span class="user-email">user@trustlinexrp.com</span>
+      <div class="user-chip">
+        <div class="avatar">U</div>
+        <span class="user-email">user@trustlinexrp.com</span>
+      </div>
+      <button class="logout-btn" type="button" onclick="logout()">Log out</button>
     </div>
   </aside>
 
@@ -779,6 +786,253 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- ─── WALLET ─── -->
+    <div id="page-wallet" class="page">
+      <h1>My Wallet</h1>
+      <p class="page-subtitle">Manage your XRP balance, top up via card, and track activity.</p>
+
+      <div class="balance-hero">
+        <div class="balance-label">Total Balance</div>
+        <div class="balance-amount">1,482.50 <span style="font-size:22px;opacity:0.5">XRP</span></div>
+        <div class="balance-fiat">≈ $2,964.00 USD · $4,600.00 AUD</div>
+        <div class="balance-address" onclick="copyWalletAddress()">
+          <span>rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh</span>
+          <span style="font-size:10px">⧉</span>
+        </div>
+      </div>
+
+      <div class="wallet-quick-actions">
+        <button class="wallet-quick-btn" onclick="walletSwitchPanel('topup', this)">
+          <div class="wallet-quick-icon">+</div>
+          <div class="wallet-quick-label">Top Up</div>
+        </button>
+        <button class="wallet-quick-btn" onclick="walletSwitchPanel('withdraw', this)">
+          <div class="wallet-quick-icon">↓</div>
+          <div class="wallet-quick-label">Withdraw</div>
+        </button>
+        <button class="wallet-quick-btn" onclick="walletSwitchPanel('receive', this)">
+          <div class="wallet-quick-icon">⬇</div>
+          <div class="wallet-quick-label">Receive</div>
+        </button>
+        <button class="wallet-quick-btn" onclick="walletSwitchPanel('tokens', this)">
+          <div class="wallet-quick-icon">⬡</div>
+          <div class="wallet-quick-label">Tokens</div>
+        </button>
+      </div>
+
+      <div class="wpanel active" id="wpanel-topup">
+        <div class="card">
+          <div class="card-title">Top up via Debit Card</div>
+          <div class="steps">
+            <div class="step done" id="wstep1"><div class="step-num">✓</div> Card details</div>
+            <div class="step-line"></div>
+            <div class="step active" id="wstep2"><div class="step-num">2</div> Amount</div>
+            <div class="step-line"></div>
+            <div class="step" id="wstep3"><div class="step-num">3</div> Confirm</div>
+          </div>
+
+          <div class="topup-screen" id="topup-s1">
+            <div class="card-visual">
+              <div class="card-chip"></div>
+              <div class="card-number" id="prev-number">•••• •••• •••• ••••</div>
+              <div class="card-bottom">
+                <div>
+                  <div class="card-holder-label">Card Holder</div>
+                  <div class="card-holder-name" id="prev-name">FULL NAME</div>
+                </div>
+                <div>
+                  <div class="card-exp-label">Expires</div>
+                  <div class="card-exp" id="prev-exp">MM/YY</div>
+                </div>
+              </div>
+              <div class="card-network">◈</div>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Cardholder Name</label>
+              <input id="card-name" type="text" placeholder="Jane Smith" oninput="previewCard()" />
+            </div>
+            <div class="field-group">
+              <label class="field-label">Card Number</label>
+              <input id="card-number" type="text" placeholder="1234 5678 9012 3456" maxlength="19" oninput="formatCardNum(this); previewCard()" />
+            </div>
+            <div class="field-row">
+              <div class="field-group">
+                <label class="field-label">Expiry</label>
+                <input id="card-exp" type="text" placeholder="MM/YY" maxlength="5" oninput="formatCardExp(this); previewCard()" />
+              </div>
+              <div class="field-group">
+                <label class="field-label">CVV</label>
+                <input id="card-cvv" type="password" placeholder="•••" maxlength="4" />
+              </div>
+            </div>
+            <button class="btn btn-primary btn-full" onclick="goTopupScreen(2)">Continue</button>
+          </div>
+
+          <div class="topup-screen active" id="topup-s2">
+            <div class="field-group">
+              <label class="field-label">Select amount (AUD)</label>
+              <div class="amount-grid">
+                <button class="amount-chip" onclick="selectTopupAmount(this,'25')">$25</button>
+                <button class="amount-chip" onclick="selectTopupAmount(this,'50')">$50</button>
+                <button class="amount-chip" onclick="selectTopupAmount(this,'100')">$100</button>
+                <button class="amount-chip" onclick="selectTopupAmount(this,'250')">$250</button>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label">Or enter custom amount</label>
+              <input id="topup-amount" type="number" placeholder="0.00" oninput="updateTopupConversion()" />
+            </div>
+            <div class="notice" id="topup-conversion-notice">Enter an amount above to see XRP estimate.</div>
+            <button class="btn btn-primary btn-full" onclick="goTopupScreen(3)">Review Top Up</button>
+          </div>
+
+          <div class="topup-screen" id="topup-s3">
+            <div class="info-row"><span class="label">Amount (AUD)</span><span class="value" id="topup-confirm-aud">—</span></div>
+            <div class="info-row"><span class="label">XRP to receive</span><span class="value" id="topup-confirm-xrp">—</span></div>
+            <div class="info-row"><span class="label">Rate</span><span class="value">1 XRP ≈ $2.00 AUD</span></div>
+            <div class="info-row"><span class="label">Fee</span><span class="value">$1.50 AUD flat</span></div>
+            <div class="info-row"><span class="label">Card</span><span class="value" id="topup-confirm-card">•••• ••••</span></div>
+            <br />
+            <div class="track-label" id="topup-proc-label" style="display:none">
+              <span>Processing payment...</span><span id="topup-proc-pct">0%</span>
+            </div>
+            <div class="track-bar-bg" id="topup-proc-bar" style="display:none">
+              <div class="track-bar-fill" id="topup-proc-fill"></div>
+            </div>
+            <button class="btn btn-primary btn-full" id="topup-pay-btn" onclick="processTopupPayment()">Pay Now</button>
+          </div>
+
+          <div class="topup-screen" id="topup-s4">
+            <div style="text-align:center; padding: 10px 0 20px;">
+              <div class="confirm-icon">✓</div>
+              <div style="font-size:18px;font-weight:700;margin-bottom:6px;">Top Up Complete</div>
+              <div style="font-size:13px;color:var(--muted)" id="topup-success-msg">XRP added to your wallet.</div>
+            </div>
+            <div class="info-row"><span class="label">Transaction ID</span><span class="value" style="font-family:monospace;font-size:11px" id="topup-success-tx">—</span></div>
+            <div class="info-row"><span class="label">New Balance</span><span class="value" id="topup-success-bal">—</span></div>
+            <br />
+            <button class="btn btn-primary btn-full" onclick="resetTopupFlow()">Done</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="wpanel" id="wpanel-withdraw">
+        <div class="card">
+          <div class="card-title">Withdraw to Bank</div>
+          <div class="wallet-bar">
+            <div class="wallet-dot"></div>
+            Available: 1,482.50 XRP · ≈ $2,965.00 AUD
+          </div>
+          <div class="field-group">
+            <label class="field-label">XRP Amount to Withdraw</label>
+            <input type="number" id="withdraw-xrp" placeholder="0.00" oninput="calcWithdrawEst()" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">BSB / Account or IBAN</label>
+            <input type="text" placeholder="062-000 · 12345678" />
+          </div>
+          <div class="field-group">
+            <label class="field-label">Account Name</label>
+            <input type="text" placeholder="Jane Smith" />
+          </div>
+          <div class="notice" id="withdraw-est">Enter an amount to see AUD estimate.</div>
+          <button class="btn btn-primary btn-full" onclick="alert('Withdrawal submitted to ledger.')">Submit Withdrawal</button>
+        </div>
+      </div>
+
+      <div class="wpanel" id="wpanel-receive">
+        <div class="card">
+          <div class="card-title">Receive XRP</div>
+          <div style="text-align:center; padding: 10px 0 14px;">
+            <div style="width:160px;height:160px;border:1px solid var(--border);border-radius:12px;margin:0 auto 14px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);">QR Code</div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Your XRP Address</label>
+            <div class="hash-box" onclick="copyWalletAddress()">rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh</div>
+            <div class="copy-hint">Tap to copy address</div>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Destination Tag (optional)</label>
+            <input type="text" placeholder="e.g. 123456" />
+          </div>
+          <div class="notice">Always include a destination tag if required by the sending exchange — missing tags may result in lost funds.</div>
+        </div>
+      </div>
+
+      <div class="wpanel" id="wpanel-tokens">
+        <div class="card">
+          <div class="section-header">
+            <h2>Token Balances</h2>
+            <button class="btn-sm" onclick="showPage('trustline')">+ Add Token</button>
+          </div>
+          <div class="token-row">
+            <div class="token-logo">XRP</div>
+            <div class="token-body"><div class="token-name">XRP</div><div class="token-issuer">Native · XRPL</div></div>
+            <div class="token-right"><div class="token-amount">1,482.50</div><div class="token-fiat">≈ $2,965.00 AUD</div></div>
+          </div>
+          <div class="token-row">
+            <div class="token-logo" style="background:#dbeafe;border-color:#bfdbfe;color:#1e40af">USD</div>
+            <div class="token-body"><div class="token-name">USD Stablecoin</div><div class="token-issuer">rvYAfW… · Gatehub</div></div>
+            <div class="token-right"><div class="token-amount">300.00</div><div class="token-fiat">≈ $462.00 AUD</div></div>
+          </div>
+          <div class="token-row">
+            <div class="token-logo" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">EUR</div>
+            <div class="token-body"><div class="token-name">EUR</div><div class="token-issuer">rhub8V… · Bitstamp</div></div>
+            <div class="token-right"><div class="token-amount">50.00</div><div class="token-fiat">≈ $83.00 AUD</div></div>
+          </div>
+          <div class="token-row">
+            <div class="token-logo" style="background:#fef9c3;border-color:#fde68a;color:#854d0e">BTC</div>
+            <div class="token-body"><div class="token-name">wBTC (wrapped)</div><div class="token-issuer">rPFLkx… · XRPL Bridge</div></div>
+            <div class="token-right"><div class="token-amount">0.0024</div><div class="token-fiat">≈ $233.00 AUD</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:4px;">
+        <div class="section-header">
+          <h2>Recent Activity</h2>
+          <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:9px;overflow:hidden;">
+            <button class="wtab-btn active" onclick="filterWalletTx('all',this)" style="flex:1;padding:7px 12px;font-size:12px;font-weight:500;border:none;background:var(--text);color:#fff;cursor:pointer;font-family:inherit;">All</button>
+            <button class="wtab-btn" onclick="filterWalletTx('in',this)" style="flex:1;padding:7px 12px;font-size:12px;font-weight:500;border:none;border-left:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-family:inherit;">In</button>
+            <button class="wtab-btn" onclick="filterWalletTx('out',this)" style="flex:1;padding:7px 12px;font-size:12px;font-weight:500;border:none;border-left:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-family:inherit;">Out</button>
+            <button class="wtab-btn" onclick="filterWalletTx('topup',this)" style="flex:1;padding:7px 12px;font-size:12px;font-weight:500;border:none;border-left:1px solid var(--border);background:var(--surface);color:var(--muted);cursor:pointer;font-family:inherit;">Top Up</button>
+          </div>
+        </div>
+        <div id="wallet-tx-list">
+          <div class="tx-row" data-type="topup">
+            <div class="tx-icon tx-topup">+</div>
+            <div class="tx-body"><div class="tx-desc">Card top up</div><div class="tx-meta">28 Feb 2026 · 14:32 · Visa ••4231</div></div>
+            <div class="tx-amount tx-in">+500.00 XRP</div>
+          </div>
+          <div class="tx-row" data-type="out">
+            <div class="tx-icon tx-out">↑</div>
+            <div class="tx-body"><div class="tx-desc">Sent to rPF…kx4</div><div class="tx-meta">27 Feb 2026 · 11:05 · Memo: invoice #44</div></div>
+            <div class="tx-amount tx-out-amt">−120.00 XRP</div>
+          </div>
+          <div class="tx-row" data-type="in">
+            <div class="tx-icon tx-in-icon">↓</div>
+            <div class="tx-body"><div class="tx-desc">Received from rHb…Th9</div><div class="tx-meta">26 Feb 2026 · 09:18</div></div>
+            <div class="tx-amount tx-in">+200.00 XRP</div>
+          </div>
+          <div class="tx-row" data-type="out">
+            <div class="tx-icon tx-out">⇄</div>
+            <div class="tx-body"><div class="tx-desc">DEX trade — XRP → USD</div><div class="tx-meta">25 Feb 2026 · 16:50 · OFF-4TL3LHFI</div></div>
+            <div class="tx-amount tx-out-amt">−20.00 XRP</div>
+          </div>
+          <div class="tx-row" data-type="topup">
+            <div class="tx-icon tx-topup">+</div>
+            <div class="tx-body"><div class="tx-desc">Card top up</div><div class="tx-meta">20 Feb 2026 · 10:00 · Mastercard ••9912</div></div>
+            <div class="tx-amount tx-in">+250.00 XRP</div>
+          </div>
+          <div class="tx-row" data-type="out">
+            <div class="tx-icon tx-out">◷</div>
+            <div class="tx-body"><div class="tx-desc">Escrow created</div><div class="tx-meta">18 Feb 2026 · 08:30 · Finish 28 Mar 2026</div></div>
+            <div class="tx-amount tx-out-amt">−327.50 XRP</div>
+          </div>
+        </div>
+      </div>
     </div>
 
 
