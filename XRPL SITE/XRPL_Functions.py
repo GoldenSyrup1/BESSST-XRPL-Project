@@ -282,6 +282,14 @@ class XRPAccount:
         resp = await submit_and_wait(tx, self.client, self.wallet)
         return resp.result
 
+    # ---------- History ----------
+    async def get_transaction_history(self) -> list:
+        from xrpl.models.requests import AccountTx
+        req = AccountTx(account=self.address, limit=20)
+        resp = await self.client.request(req)
+        if resp.is_successful() and "transactions" in resp.result:
+            return resp.result["transactions"]
+        return []
     async def get_token_balance(self, currency: str, issuer: str) -> float:
         """
         Returns how much of a token THIS account holds.
