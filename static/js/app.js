@@ -328,6 +328,91 @@
       descEl.textContent = desc;
     }
 
+    // Trust line flow destination auth check (step 3)
+    function runTlAuthCheck() {
+      const input = document.getElementById('tl-auth-input').value.trim();
+      if (!input) return;
+
+      document.getElementById('tl-auth-loading').style.display = 'block';
+      document.getElementById('tl-auth-result').classList.remove('visible');
+
+      setTimeout(() => {
+        document.getElementById('tl-auth-loading').style.display = 'none';
+
+        const currency = (document.getElementById('tl-dest-currency')?.textContent || 'XRP').trim();
+        const isValid = input.startsWith('r') && input.length >= 25;
+        const isOld = Math.random() > 0.3;
+        const isClean = Math.random() > 0.25;
+        const isActive = Math.random() > 0.2;
+        const hasTl = Math.random() > 0.35;
+        const tlOk = currency === 'XRP' || hasTl;
+
+        const setTlRow = (id, passed, text) => {
+          const icon = document.getElementById('tl-chk-' + id + '-icon');
+          const desc = document.getElementById('tl-chk-' + id + '-desc');
+          if (!icon || !desc) return;
+          icon.className = 'auth-check-icon ' + (passed ? 'safe' : 'danger');
+          icon.textContent = passed ? '✓' : '✕';
+          desc.textContent = text;
+        };
+
+        const months = isOld ? Math.floor(Math.random() * 36 + 6) : Math.floor(Math.random() * 3 + 1);
+        const txCount = isActive ? Math.floor(Math.random() * 500 + 50) : Math.floor(Math.random() * 5);
+
+        setTlRow('validity', isValid, isValid
+          ? 'This address exists on the XRPL ledger.'
+          : 'This address does not appear to exist on XRPL.');
+        setTlRow('age', isOld, isOld
+          ? 'This account is ' + months + ' months old.'
+          : 'This account is only ' + months + ' month(s) old.');
+        setTlRow('blacklist', isClean, isClean
+          ? 'Address is not present in known fraud databases.'
+          : 'Address appears in known fraud/scam lists.');
+        setTlRow('activity', isActive, isActive
+          ? 'Account has ' + txCount + ' transactions on record.'
+          : 'Account has very limited on-chain activity.');
+        setTlRow('trustline', tlOk, currency === 'XRP'
+          ? 'XRP requires no trust line.'
+          : tlOk
+            ? 'Recipient has an active ' + currency + ' trust line.'
+            : 'Recipient does not have a ' + currency + ' trust line.');
+
+        const tlLabel = document.getElementById('tl-chk-trustline-currency');
+        if (tlLabel) tlLabel.textContent = currency !== 'XRP' ? '· ' + currency : '';
+
+        const safeCount = [isValid, isOld, isClean, isActive, tlOk].filter(Boolean).length;
+        const overall = document.getElementById('tl-auth-overall');
+        const overallIcon = document.getElementById('tl-auth-overall-icon');
+        const overallTitle = document.getElementById('tl-auth-overall-title');
+        const overallDesc = document.getElementById('tl-auth-overall-desc');
+
+        overall.className = 'auth-overall';
+        if (!tlOk) {
+          overall.classList.add('warn');
+          overallIcon.textContent = '⚠';
+          overallTitle.textContent = 'Cannot Receive ' + currency;
+          overallDesc.textContent = 'Recipient has no ' + currency + ' trust line.';
+        } else if (safeCount >= 5) {
+          overall.classList.add('safe');
+          overallIcon.textContent = '✓';
+          overallTitle.textContent = 'Low Risk — Looks Safe';
+          overallDesc.textContent = 'All checks passed for this destination.';
+        } else if (safeCount >= 3) {
+          overall.classList.add('warn');
+          overallIcon.textContent = '⚠';
+          overallTitle.textContent = 'Medium Risk — Proceed with Caution';
+          overallDesc.textContent = 'Some checks raised concerns.';
+        } else {
+          overall.classList.add('danger');
+          overallIcon.textContent = '✕';
+          overallTitle.textContent = 'High Risk — Do Not Send';
+          overallDesc.textContent = 'Multiple safety checks failed.';
+        }
+
+        document.getElementById('tl-auth-result').classList.add('visible');
+      }, 1500);
+    }
+
     let tradeData = {};
     let trackInterval = null;
     let openOffers = [];
@@ -338,6 +423,10 @@
       document.getElementById('page-' + id).classList.add('active');
       const navEl = document.getElementById('nav-' + id);
       if (navEl) navEl.classList.add('active');
+    }
+
+    function logout() {
+      window.location.href = './index.html';
     }
 
     function goTradeScreen(n) {
@@ -384,8 +473,8 @@
       if (trackInterval) clearInterval(trackInterval);
       const stages = [
         { pct: 25, ledger: 'Ledger #87432' + Math.floor(Math.random()*99) },
-        { pct: 55, ledger: 'Scanning 2,400 offers...' },
-        { pct: 80, ledger: 'Counterparty found' },
+        { pct: 55, ledger: 'Scanning available swaps...' },
+        { pct: 80, ledger: 'Match found!' },
         { pct: 100, ledger: 'Match confirmed' },
       ];
 
@@ -430,7 +519,7 @@
     function renderOpenOffers() {
       const container = document.getElementById('open-offers-list');
       if (openOffers.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">⇄</div>No open offers yet.<br/>Create a trade to get started.</div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">⇄</div>No active swaps.<br/>Start a swap to get going.</div>';
         return;
       }
       container.innerHTML = openOffers.map((o, i) => `
@@ -438,7 +527,7 @@
           <div class="offer-info">
             <div class="offer-id">${o.id}</div>
             <div class="offer-pair">${o.sell} → ${o.buy}</div>
-            <div class="offer-time">Submitted at ${o.time}</div>
+            <div class="offer-time">Started at ${o.time}</div>
           </div>
           <div class="offer-actions">
             <span class="badge badge-open"><span class="badge-dot"></span> Open</span>
@@ -478,6 +567,148 @@
 
     function toggleEscrow(el) {
       el.classList.toggle('expanded');
+    }
+
+    // ── Wallet ──
+    function walletSwitchPanel(id, btn) {
+      document.querySelectorAll('.wpanel').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.wallet-quick-btn').forEach(b => b.classList.remove('wq-active'));
+      document.getElementById('wpanel-' + id).classList.add('active');
+      btn.classList.add('wq-active');
+    }
+
+    function copyWalletAddress() {
+      const addr = 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh';
+      navigator.clipboard.writeText(addr).catch(() => {});
+      document.querySelectorAll('.balance-address, .hash-box').forEach((el) => {
+        const origColor = el.style.color;
+        el.style.color = '#166534';
+        setTimeout(() => { el.style.color = origColor; }, 1500);
+      });
+    }
+
+    function previewCard() {
+      const name = document.getElementById('card-name').value.toUpperCase() || 'FULL NAME';
+      const num = document.getElementById('card-number').value || '•••• •••• •••• ••••';
+      const exp = document.getElementById('card-exp').value || 'MM/YY';
+      document.getElementById('prev-name').textContent = name;
+      document.getElementById('prev-number').textContent = num;
+      document.getElementById('prev-exp').textContent = exp;
+    }
+
+    function formatCardNum(input) {
+      let v = input.value.replace(/\D/g, '').substring(0, 16);
+      input.value = v.replace(/(.{4})/g, '$1 ').trim();
+    }
+
+    function formatCardExp(input) {
+      let v = input.value.replace(/\D/g, '').substring(0, 4);
+      if (v.length >= 2) v = v.substring(0, 2) + '/' + v.substring(2);
+      input.value = v;
+    }
+
+    function goTopupScreen(n) {
+      document.querySelectorAll('.topup-screen').forEach(s => s.classList.remove('active'));
+      document.getElementById('topup-s' + n).classList.add('active');
+      ['wstep1', 'wstep2', 'wstep3'].forEach((s, i) => {
+        const el = document.getElementById(s);
+        el.className = 'step ' + (i + 1 < n ? 'done' : i + 1 === n ? 'active' : '');
+        el.querySelector('.step-num').textContent = i + 1 < n ? '✓' : i + 1;
+      });
+      if (n === 3) populateTopupConfirm();
+    }
+
+    function selectTopupAmount(btn, val) {
+      document.querySelectorAll('.amount-chip').forEach(c => c.classList.remove('selected'));
+      btn.classList.add('selected');
+      document.getElementById('topup-amount').value = val;
+      updateTopupConversion();
+    }
+
+    function updateTopupConversion() {
+      const aud = parseFloat(document.getElementById('topup-amount').value);
+      const el = document.getElementById('topup-conversion-notice');
+      if (!aud || aud <= 0) {
+        el.textContent = 'Enter an amount above to see XRP estimate.';
+        return;
+      }
+      const xrp = ((aud - 1.5) / 2.0).toFixed(2);
+      el.textContent = '$' + aud.toFixed(2) + ' AUD → ~' + xrp + ' XRP (after $1.50 fee, rate: 1 XRP = $2.00 AUD)';
+    }
+
+    function populateTopupConfirm() {
+      const aud = parseFloat(document.getElementById('topup-amount').value) || 0;
+      const xrp = ((aud - 1.5) / 2.0).toFixed(2);
+      const num = document.getElementById('card-number').value;
+      const last4 = num ? num.replace(/\s/g, '').slice(-4) : '••••';
+      document.getElementById('topup-confirm-aud').textContent = '$' + aud.toFixed(2) + ' AUD';
+      document.getElementById('topup-confirm-xrp').textContent = xrp + ' XRP';
+      document.getElementById('topup-confirm-card').textContent = '•••• ' + last4;
+    }
+
+    let topupPayInterval = null;
+    function processTopupPayment() {
+      document.getElementById('topup-pay-btn').disabled = true;
+      document.getElementById('topup-pay-btn').textContent = 'Processing…';
+      document.getElementById('topup-proc-label').style.display = 'flex';
+      document.getElementById('topup-proc-bar').style.display = 'block';
+      let pct = 0;
+      topupPayInterval = setInterval(() => {
+        pct += Math.floor(Math.random() * 20) + 8;
+        if (pct >= 100) {
+          pct = 100;
+          clearInterval(topupPayInterval);
+          setTimeout(topupPaySuccess, 500);
+        }
+        document.getElementById('topup-proc-fill').style.width = pct + '%';
+        document.getElementById('topup-proc-pct').textContent = pct + '%';
+      }, 400);
+    }
+
+    function topupPaySuccess() {
+      const aud = parseFloat(document.getElementById('topup-amount').value) || 0;
+      const xrp = ((aud - 1.5) / 2.0).toFixed(2);
+      const txId = 'TXN-' + Math.random().toString(36).substr(2, 10).toUpperCase();
+      const newBal = (1482.5 + parseFloat(xrp)).toFixed(2);
+      document.getElementById('topup-success-msg').textContent = xrp + ' XRP added to your wallet.';
+      document.getElementById('topup-success-tx').textContent = txId;
+      document.getElementById('topup-success-bal').textContent = newBal + ' XRP';
+      goTopupScreen(4);
+    }
+
+    function resetTopupFlow() {
+      document.getElementById('topup-amount').value = '';
+      document.getElementById('topup-conversion-notice').textContent = 'Enter an amount above to see XRP estimate.';
+      document.querySelectorAll('.amount-chip').forEach(c => c.classList.remove('selected'));
+      document.getElementById('topup-pay-btn').disabled = false;
+      document.getElementById('topup-pay-btn').textContent = 'Pay now';
+      document.getElementById('topup-proc-label').style.display = 'none';
+      document.getElementById('topup-proc-bar').style.display = 'none';
+      document.getElementById('topup-proc-fill').style.width = '0%';
+      goTopupScreen(2);
+    }
+
+    function calcWithdrawEst() {
+      const xrp = parseFloat(document.getElementById('withdraw-xrp').value);
+      const el = document.getElementById('withdraw-est');
+      if (!xrp || xrp <= 0) {
+        el.textContent = "Enter an amount above to see how much AUD you'll get.";
+        return;
+      }
+      const aud = (xrp * 2.0 - 2.5).toFixed(2);
+      el.textContent = xrp + ' XRP → ~$' + aud + ' AUD (after $2.50 withdrawal fee, rate: 1 XRP = $2.00 AUD)';
+    }
+
+    function filterWalletTx(type, btn) {
+      document.querySelectorAll('.wtab-btn').forEach((b) => {
+        b.style.background = 'var(--surface)';
+        b.style.color = 'var(--muted)';
+      });
+      btn.style.background = 'var(--text)';
+      btn.style.color = '#fff';
+      document.querySelectorAll('#wallet-tx-list .tx-row').forEach((row) => {
+        row.style.display = (type === 'all' || row.dataset.type === type) ? '' : 'none';
+      });
     }
 
     function filterEscrows(status, btn) {

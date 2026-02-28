@@ -95,7 +95,7 @@
     position: absolute; inset: 0;
     background:
       linear-gradient(rgba(180,210,220,0.55), rgba(180,210,220,0.55)),
-      url('https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&q=80') center/cover no-repeat;
+      url('../images/background.jpg') center/cover no-repeat;
     filter: saturate(0.7) brightness(0.95);
   }
 
