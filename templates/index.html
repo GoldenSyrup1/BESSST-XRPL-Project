@@ -190,7 +190,7 @@
       <div class="input-group">
         <span class="input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
         <label>Email/username</label>
-        <input type="text" placeholder="example@gmail.com">
+        <input type="text" id="loginUsername" placeholder="example@gmail.com">
       </div>
       <div class="input-group">
         <span class="input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span>
@@ -202,7 +202,7 @@
         <label class="remember-me"><input type="checkbox"> Remember me</label>
         <a href="#" class="forgot-link">Forgot Password?</a>
       </div>
-      <button class="submit-btn">Login</button>
+      <button class="submit-btn" id="loginSubmit" type="button">Login</button>
     </div>
 
     <!-- REGISTER FORM -->
@@ -212,7 +212,12 @@
       <div class="input-group">
         <span class="input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span>
         <label>Email/username</label>
-        <input type="text" placeholder="example@gmail.com">
+        <input type="text" id="regUsername" placeholder="example@gmail.com">
+      </div>
+      <div class="input-group">
+        <span class="input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.35 1.78.68 2.62a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.46-1.25a2 2 0 0 1 2.11-.45c.84.33 1.72.56 2.62.68A2 2 0 0 1 22 16.92z"/></svg></span>
+        <label>Phone (optional)</label>
+        <input type="tel" id="regPhone" placeholder="+1 555 0100">
       </div>
       <div class="input-group">
         <span class="input-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span>
@@ -229,7 +234,7 @@
       <div class="form-meta" style="margin-bottom:20px">
         <label class="remember-me"><input type="checkbox"> Remember me</label>
       </div>
-      <button class="submit-btn">Sign up</button>
+      <button class="submit-btn" id="registerSubmit" type="button">Sign up</button>
     </div>
 
   </div>

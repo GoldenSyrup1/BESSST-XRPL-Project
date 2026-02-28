@@ -10,37 +10,51 @@
 
   <!-- ── SIDEBAR ── -->
   <aside class="sidebar">
+    <button
+      id="sidebar-toggle"
+      class="sidebar-toggle"
+      type="button"
+      onclick="toggleSidebar()"
+      aria-label="Collapse sidebar"
+      title="Collapse sidebar"
+    >
+      <span id="sidebar-toggle-icon" class="sidebar-toggle-icon">‹</span>
+    </button>
     <div class="sidebar-brand">
       <div class="brand-icon">✦</div>
       <button class="brand-name brand-home" type="button" onclick="showPage('dashboard')">Trustline XRP</button>
     </div>
     <nav class="sidebar-nav">
       <button class="nav-item active" id="nav-dashboard" onclick="showPage('dashboard')">
-        <span class="nav-icon">⊞</span> Dashboard
+        <span class="nav-icon">⊞</span><span class="nav-text">Dashboard</span>
       </button>
       <div class="nav-section-label">Actions</div>
       <button class="nav-item" id="nav-trustline" onclick="showPage('trustline')">
-        <span class="nav-icon">⬡</span> Enable a token
+        <span class="nav-icon">⬡</span><span class="nav-text">Enable a token</span>
       </button>
       <button class="nav-item" id="nav-trade" onclick="requireTrustline('trade')">
-        <span class="nav-icon">⇄</span> Swap currencies
+        <span class="nav-icon">⇄</span><span class="nav-text">Swap currencies</span>
       </button>
       <button class="nav-item" id="nav-send" onclick="requireTrustline('send')">
-        <span class="nav-icon">↑</span> Send money
+        <span class="nav-icon">↑</span><span class="nav-text">Send money</span>
       </button>
       <button class="nav-item" id="nav-auth" onclick="showPage('auth')">
-        <span class="nav-icon">◉</span> Is this address safe?
+        <span class="nav-icon">◉</span><span class="nav-text">Is this address safe?</span>
       </button>
       <div class="nav-section-label">View</div>
       <button class="nav-item" id="nav-escrows" onclick="showPage('escrows')">
-        <span class="nav-icon">◷</span> Scheduled Payments
+        <span class="nav-icon">◷</span><span class="nav-text">Scheduled Payments</span>
       </button>
       <button class="nav-item" id="nav-records" onclick="showPage('records')">
-        <span class="nav-icon">☰</span> History
+        <span class="nav-icon">☰</span><span class="nav-text">History</span>
       </button>
       <div class="nav-section-label">Wallet</div>
       <button class="nav-item" id="nav-wallet" onclick="showPage('wallet')">
-        <span class="nav-icon">◈</span> My Wallet
+        <span class="nav-icon">◈</span><span class="nav-text">My Wallet</span>
+      </button>
+      <div class="sidebar-divider"></div>
+      <button class="nav-item nav-logout" type="button" onclick="logout()">
+        <span class="nav-icon">⇦</span><span class="nav-text">Log out</span>
       </button>
     </nav>
     <div class="sidebar-footer">
@@ -48,7 +62,6 @@
         <div class="avatar">U</div>
         <span class="user-email">user@trustlinexrp.com</span>
       </div>
-      <button class="logout-btn" type="button" onclick="logout()">Log out</button>
     </div>
   </aside>
 
@@ -63,32 +76,37 @@
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
         <div>
           <div class="field-label" style="margin-bottom:4px;">Your wallet address</div>
-          <div style="font-size:13px; font-family:'SF Mono','Fira Code',monospace;">rConnected...abc</div>
+          <div id="dashboard-wallet-address" style="font-size:13px; font-family:'SF Mono','Fira Code',monospace;">rConnected...abc</div>
         </div>
         <div style="text-align:right;">
           <div class="field-label" style="margin-bottom:4px;">Balance</div>
-          <div style="font-size:16px; font-weight:700;">1,240.50 XRP</div>
+          <div id="dashboard-xrp-balance" style="font-size:16px; font-weight:700;">1,240.50 XRP</div>
         </div>
       </div>
 
       <div class="section-header">
         <h2>Active swaps</h2>
-        <button class="btn btn-primary btn-sm" onclick="showPage('trade'); resetTrade();">+ New swap</button>
       </div>
       <div id="open-offers-list">
-        <div class="empty-state">
-          <div class="empty-icon">⇄</div>
-          No active swaps.<br/>Start a swap to get going.
+        <div class="empty-state empty-state-actions">
+          <button class="empty-state-action" type="button" onclick="openSwapFromDashboard()">
+            <div class="empty-icon">⇄</div>
+            <div class="empty-action-title">No active swaps.</div>
+            <div class="empty-action-desc">Start a swap to get going.</div>
+          </button>
+          <button class="empty-state-action secondary" type="button" onclick="openTokenEnableFromDashboard()">
+            <div class="empty-icon">⬡</div>
+            <div class="empty-action-title">Enable a token</div>
+            <div class="empty-action-desc">Set up USD, BTC or other tokens first.</div>
+          </button>
         </div>
       </div>
 
       <div class="section-header" style="margin-top:8px;">
         <h2>Recent activity</h2>
       </div>
-      <div class="card">
-        <div class="info-row"><span class="label">You gave 50 XRP to rXRPL...abc</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
-        <div class="info-row"><span class="label">Scheduled payment · 200 XRP locked</span><span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span></div>
-        <div class="info-row"><span class="label">USD token enabled</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
+      <div class="card" id="dashboard-recent-activity">
+        <div class="info-row"><span class="label">No recent activity yet.</span><span class="badge badge-open"><span class="badge-dot"></span> Empty</span></div>
       </div>
     </div>
 
@@ -134,6 +152,10 @@
               <input type="number" id="sell-amount" placeholder="0.00" min="0" step="any" />
             </div>
           </div>
+          <div class="field-group" id="sell-issuer-group" style="display:none;">
+            <label class="field-label">Sell issuer (optional override)</label>
+            <input type="text" id="sell-issuer" placeholder="Issuer address (auto-filled from registry)" />
+          </div>
           <div class="swap-divider">⇅</div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:500;">YOU'RE GETTING</div>
           <div class="field-row">
@@ -146,7 +168,12 @@
               <input type="number" id="buy-amount" placeholder="0.00" min="0" step="any" />
             </div>
           </div>
+          <div class="field-group" id="buy-issuer-group" style="display:none;">
+            <label class="field-label">Buy issuer (optional override)</label>
+            <input type="text" id="buy-issuer" placeholder="Issuer address (auto-filled from registry)" />
+          </div>
           <button class="btn btn-primary btn-full" style="margin-top:6px;" onclick="goTradeScreen(2)">Start swap →</button>
+          <div id="trade-status-message" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
         </div>
       </div>
 
@@ -186,7 +213,7 @@
           </div>
         </div>
         <div class="btn-row">
-          <button class="btn btn-secondary" onclick="noMatchFound()">Simulate: no match found</button>
+          <button class="btn btn-secondary" onclick="noMatchFound()">No match / Cancel</button>
           <button class="btn btn-secondary" onclick="cancelOffer()">Cancel swap</button>
         </div>
       </div>
@@ -279,7 +306,7 @@
         </div>
         <div class="field-group">
           <label class="field-label">Send to (wallet address)</label>
-          <input type="text" placeholder="Paste their wallet address here" />
+          <input type="text" id="send-destination" placeholder="Paste their wallet address here" />
         </div>
         <div class="field-row">
           <div class="field-group">
@@ -288,10 +315,15 @@
           </div>
           <div class="field-group">
             <label class="field-label">Amount</label>
-            <input type="number" placeholder="0.00" min="0" step="any" />
+            <input type="number" id="send-amount" placeholder="0.00" min="0" step="any" />
           </div>
         </div>
-        <button class="btn btn-primary btn-full">Send →</button>
+        <div class="field-group" id="send-issuer-group" style="display:none;">
+          <label class="field-label">Token issuer (optional override)</label>
+          <input type="text" id="send-issuer" placeholder="Issuer address (auto-filled from registry)" />
+        </div>
+        <button class="btn btn-primary btn-full" id="send-btn" onclick="sendCurrency()">Send →</button>
+        <div id="send-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
       </div>
     </div>
 
@@ -299,6 +331,9 @@
     <div id="page-trustline" class="page">
       <h1>Enable a new token</h1>
       <p class="page-subtitle">Before you can hold USD, BTC or other tokens, you need to enable them first. It's quick and free.</p>
+      <div id="tl-cancel-wrap" style="display:none;justify-content:flex-end;margin:-10px 0 14px;">
+        <button id="tl-cancel-btn" class="btn btn-secondary" style="padding:8px 14px;font-size:12px;" onclick="tlCancelFlow()">Cancel process</button>
+      </div>
 
       <!-- Progress steps -->
       <div class="steps" style="margin-bottom:24px;">
@@ -508,7 +543,7 @@
             </div>
 
             <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:center;">
-              Scaffold only — connect Python backend to replace simulated results.
+              Live XRPL-backed checks are active.
             </div>
           </div>
         </div>
@@ -524,17 +559,17 @@
       <div class="escrow-summary-bar">
         <div class="summary-tile">
           <div class="tile-label">Total held</div>
-          <div class="tile-value">650 XRP</div>
-          <div class="tile-sub">across 3 payments</div>
+          <div class="tile-value" id="escrow-total-held">0 XRP</div>
+          <div class="tile-sub" id="escrow-total-held-sub">across 0 payments</div>
         </div>
         <div class="summary-tile">
           <div class="tile-label">Ready to release</div>
-          <div class="tile-value">200 XRP</div>
-          <div class="tile-sub">1 payment ready</div>
+          <div class="tile-value" id="escrow-ready-to-release">0 XRP</div>
+          <div class="tile-sub" id="escrow-ready-to-release-sub">0 payments ready</div>
         </div>
         <div class="summary-tile">
           <div class="tile-label">Expiring soon</div>
-          <div class="tile-value">1</div>
+          <div class="tile-value" id="escrow-expiring-soon">0</div>
           <div class="tile-sub">within 7 days</div>
         </div>
       </div>
@@ -689,12 +724,8 @@
     <div id="page-records" class="page">
       <h1>History</h1>
       <p class="page-subtitle">Everything that's happened on your account</p>
-      <div class="card">
-        <div class="info-row"><span class="label">Swap · 100 XRP → 250 USD</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
-        <div class="info-row"><span class="label">Sent · 50 XRP to rXRPL...abc</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
-        <div class="info-row"><span class="label">Scheduled payment · 200 XRP</span><span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span></div>
-        <div class="info-row"><span class="label">USD token enabled</span><span class="badge badge-confirmed"><span class="badge-dot"></span> Confirmed</span></div>
-        <div class="info-row"><span class="label">Swap · 30 XRP → 80 USD</span><span class="badge badge-open"><span class="badge-dot"></span> Open</span></div>
+      <div class="card" id="records-list">
+        <div class="info-row"><span class="label">No records yet.</span><span class="badge badge-open"><span class="badge-dot"></span> Empty</span></div>
       </div>
     </div>
 
@@ -781,8 +812,8 @@
           </div>
         </div>
 
-        <div style="margin-top:14px; font-size:11px; color:var(--muted); text-align:center; line-height:1.6;">
-          Results are simulated for this demo.
+        <div style="margin-top:14px; font-size:11px; color:var(--muted); text-align:center; line-height:1.6;" id="auth-result-footnote">
+          Results are fetched from XRPL checks.
         </div>
       </div>
 
@@ -795,9 +826,9 @@
 
       <div class="balance-hero">
         <div class="balance-label">Total Balance</div>
-        <div class="balance-amount">1,482.50 <span style="font-size:22px;opacity:0.5">XRP</span></div>
+        <div class="balance-amount" id="wallet-total-balance">1,482.50 <span style="font-size:22px;opacity:0.5">XRP</span></div>
         <div class="balance-fiat">≈ $2,964.00 USD · $4,600.00 AUD</div>
-        <div class="balance-address" onclick="copyWalletAddress()">
+        <div class="balance-address" id="wallet-main-address" onclick="copyWalletAddress()">
           <span>rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh</span>
           <span style="font-size:10px">⧉</span>
         </div>
@@ -825,6 +856,7 @@
       <div class="wpanel active" id="wpanel-topup">
         <div class="card">
           <div class="card-title">Add money with a card</div>
+          <div class="notice" style="margin-bottom:12px;">Demo only (not on XRPL).</div>
           <div class="steps">
             <div class="step done" id="wstep1"><div class="step-num">✓</div> Card details</div>
             <div class="step-line"></div>
@@ -921,6 +953,7 @@
       <div class="wpanel" id="wpanel-withdraw">
         <div class="card">
           <div class="card-title">Move money to your bank</div>
+          <div class="notice" style="margin-bottom:12px;">Demo only (not on XRPL).</div>
           <div class="wallet-bar">
             <div class="wallet-dot"></div>
             You have: 1,482.50 XRP (≈ $2,965.00 AUD)
@@ -967,6 +1000,7 @@
             <h2>Your tokens</h2>
             <button class="btn-sm" onclick="showPage('trustline')">+ Add Token</button>
           </div>
+          <div id="token-list">
           <div class="token-row">
             <div class="token-logo">XRP</div>
             <div class="token-body"><div class="token-name">XRP</div><div class="token-issuer">Main currency</div></div>
@@ -986,6 +1020,7 @@
             <div class="token-logo" style="background:#fef9c3;border-color:#fde68a;color:#854d0e">BTC</div>
             <div class="token-body"><div class="token-name">Wrapped Bitcoin</div><div class="token-issuer">rPFLkx… · XRPL Bridge</div></div>
             <div class="token-right"><div class="token-amount">0.0024</div><div class="token-fiat">≈ $233.00 AUD</div></div>
+          </div>
           </div>
         </div>
       </div>

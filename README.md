@@ -12,13 +12,14 @@ This project now uses a clean split between templates and static assets.
 - `static/js/app.js`: Dashboard app logic
 - `archive/`: Original monolithic source files kept for reference
 
-## Run locally
+## Run locally (Flask app)
 
 ```bash
-python3 -m http.server 4173
+python3 -m pip install -r requirements.txt
+python3 app.py
 ```
 
 Open:
 
-- `http://127.0.0.1:4173/templates/index.html`
-- `http://127.0.0.1:4173/templates/app.html`
+- `http://127.0.0.1:5000/`
+- `http://127.0.0.1:5000/dashboard`

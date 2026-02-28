@@ -78,10 +78,92 @@
   }
   type();
 
-  // Route successful auth actions into the app page.
-  document.querySelectorAll('.submit-btn').forEach((btn) => {
-    btn.addEventListener('click', (event) => {
-      event.preventDefault();
-      window.location.href = './app.html';
+  async function postJson(url, payload) {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
-  });
+
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (_) {
+      data = { error: 'Invalid server response' };
+    }
+
+    if (!response.ok || data.success === false) {
+      throw new Error(data.error || 'Request failed');
+    }
+    return data.data || data;
+  }
+
+  function goToDashboard(username) {
+    if (username) {
+      localStorage.setItem('xrpl_username', username);
+    }
+    window.location.href = '/dashboard';
+  }
+
+  async function handleLogin(event) {
+    event.preventDefault();
+
+    const username = document.getElementById('loginUsername')?.value.trim().toLowerCase();
+    const password = document.getElementById('loginPwd')?.value;
+
+    if (!username || !password) {
+      alert('field cannot be empty');
+      return;
+    }
+
+    const loginBtn = document.getElementById('loginSubmit');
+    const originalText = loginBtn.textContent;
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Logging in...';
+
+    try {
+      await postJson('/api/auth/login', { username, password });
+      goToDashboard(username);
+    } catch (err) {
+      alert(err.message || 'Login failed.');
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = originalText;
+    }
+  }
+
+  async function handleRegister(event) {
+    event.preventDefault();
+
+    const username = document.getElementById('regUsername')?.value.trim().toLowerCase();
+    const phone = document.getElementById('regPhone')?.value.trim();
+    const password = document.getElementById('regPwd')?.value;
+    const confirm = document.getElementById('regPwd2')?.value;
+
+    if (!username || !password) {
+      alert('field cannot be empty');
+      return;
+    }
+    if (password !== confirm) {
+      alert('Password and confirm password do not match.');
+      return;
+    }
+
+    const registerBtn = document.getElementById('registerSubmit');
+    const originalText = registerBtn.textContent;
+    registerBtn.disabled = true;
+    registerBtn.textContent = 'Creating account...';
+
+    try {
+      await postJson('/api/auth/register', { username, password, phone });
+      goToDashboard(username);
+    } catch (err) {
+      alert(err.message || 'Registration failed.');
+    } finally {
+      registerBtn.disabled = false;
+      registerBtn.textContent = originalText;
+    }
+  }
+
+  document.getElementById('loginSubmit')?.addEventListener('click', handleLogin);
+  document.getElementById('registerSubmit')?.addEventListener('click', handleRegister);
