@@ -473,8 +473,8 @@
       if (trackInterval) clearInterval(trackInterval);
       const stages = [
         { pct: 25, ledger: 'Ledger #87432' + Math.floor(Math.random()*99) },
-        { pct: 55, ledger: 'Scanning 2,400 offers...' },
-        { pct: 80, ledger: 'Counterparty found' },
+        { pct: 55, ledger: 'Scanning available swaps...' },
+        { pct: 80, ledger: 'Match found!' },
         { pct: 100, ledger: 'Match confirmed' },
       ];
 
@@ -519,7 +519,7 @@
     function renderOpenOffers() {
       const container = document.getElementById('open-offers-list');
       if (openOffers.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="empty-icon">⇄</div>No open offers yet.<br/>Create a trade to get started.</div>';
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">⇄</div>No active swaps.<br/>Start a swap to get going.</div>';
         return;
       }
       container.innerHTML = openOffers.map((o, i) => `
@@ -527,7 +527,7 @@
           <div class="offer-info">
             <div class="offer-id">${o.id}</div>
             <div class="offer-pair">${o.sell} → ${o.buy}</div>
-            <div class="offer-time">Submitted at ${o.time}</div>
+            <div class="offer-time">Started at ${o.time}</div>
           </div>
           <div class="offer-actions">
             <span class="badge badge-open"><span class="badge-dot"></span> Open</span>
@@ -681,7 +681,7 @@
       document.getElementById('topup-conversion-notice').textContent = 'Enter an amount above to see XRP estimate.';
       document.querySelectorAll('.amount-chip').forEach(c => c.classList.remove('selected'));
       document.getElementById('topup-pay-btn').disabled = false;
-      document.getElementById('topup-pay-btn').textContent = 'Pay Now';
+      document.getElementById('topup-pay-btn').textContent = 'Pay now';
       document.getElementById('topup-proc-label').style.display = 'none';
       document.getElementById('topup-proc-bar').style.display = 'none';
       document.getElementById('topup-proc-fill').style.width = '0%';
@@ -692,7 +692,7 @@
       const xrp = parseFloat(document.getElementById('withdraw-xrp').value);
       const el = document.getElementById('withdraw-est');
       if (!xrp || xrp <= 0) {
-        el.textContent = 'Enter an amount to see AUD estimate.';
+        el.textContent = "Enter an amount above to see how much AUD you'll get.";
         return;
       }
       const aud = (xrp * 2.0 - 2.5).toFixed(2);

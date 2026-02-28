@@ -10,7 +10,7 @@
       --accent: #111111;
       --green: #22c55e;
       --sidebar-w: 200px;
-      --main-max: 1240px;
+      --main-max: 1560px;
     }
 
     body {
@@ -142,7 +142,7 @@
       flex: 1;
       width: calc(100% - var(--sidebar-w));
       max-width: var(--main-max);
-      padding: 40px 48px;
+      padding: 40px 60px;
     }
 
     /* ── Shared ── */
@@ -727,3 +727,47 @@
     .token-right { text-align: right; }
     .token-amount { font-size: 14px; font-weight: 600; }
     .token-fiat { font-size: 11px; color: var(--muted); margin-top: 1px; }
+
+    @media (max-width: 1200px) {
+      .main {
+        padding: 32px 28px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      body {
+        display: block;
+      }
+
+      .sidebar {
+        position: static;
+        width: 100%;
+        min-height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .sidebar-nav {
+        max-height: 38vh;
+        overflow-y: auto;
+      }
+
+      .sidebar-footer {
+        padding-bottom: 16px;
+      }
+
+      .main {
+        margin-left: 0;
+        width: 100%;
+        max-width: none;
+        padding: 20px 16px 28px;
+      }
+
+      .field-row,
+      .btn-row,
+      .wallet-quick-actions,
+      .escrow-summary-bar,
+      .detail-grid {
+        grid-template-columns: 1fr;
+      }
+    }
