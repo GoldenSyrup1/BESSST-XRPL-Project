@@ -1,293 +1,392 @@
 import asyncio
-import hashlib
-import os
+from dataclasses import dataclass
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Dict, Any, Tuple
+
 from xrpl.asyncio.clients import AsyncJsonRpcClient
 from xrpl.asyncio.wallet import generate_faucet_wallet
 from xrpl.wallet import Wallet
-from datetime import datetime, timedelta
-from xrpl.models.transactions import Payment, EscrowCreate, TrustSet, OfferCreate, EscrowFinish
-from xrpl.models.requests import AccountLines, ServerState
+
+from xrpl.models.requests import AccountInfo, AccountLines, ServerState
+from xrpl.models.transactions import Payment, TrustSet, OfferCreate, EscrowCreate, EscrowFinish
 from xrpl.asyncio.transaction import submit_and_wait
 from xrpl.utils import xrp_to_drops, datetime_to_ripple_time
-from xrpl.utils import str_to_hex
+
+from cryptoconditions import PreimageSha256
+import os
 
 
+# -------------------------
+# Time helpers (always UTC)
+# -------------------------
+
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+def to_ripple_time(dt: datetime) -> int:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return datetime_to_ripple_time(dt.astimezone(timezone.utc))
+
+def make_condition_and_fulfillment() -> Tuple[str, str]:
+    """
+    Proper XRPL condition & fulfillment using PreimageSha256.
+    """
+    preimage = os.urandom(32)
+    cc = PreimageSha256(preimage)
+    condition_hex = cc.condition_binary.hex().upper()
+    fulfillment_hex = cc.serialize_binary().hex().upper()
+    return condition_hex, fulfillment_hex
+
+
+# -------------------------
+# XRPL Account (Async)
+# -------------------------
+
+@dataclass
 class XRPAccount:
-    # Match the order you use in create_new: (username, wallet, client)
-    def __init__(self, username: str, wallet: Wallet, client: AsyncJsonRpcClient):
-        self.username = username
-        self.wallet = wallet
-        self.client = client
-        self.address = wallet.classic_address
+    username: str
+    wallet: Wallet
+    client: AsyncJsonRpcClient
+
+    @property
+    def address(self) -> str:
+        return self.wallet.classic_address
 
     @classmethod
-    async def create_new(cls, username: str, client: AsyncJsonRpcClient):
-        # generate_faucet_wallet is the async network call
+    async def create_new(cls, username: str, client: AsyncJsonRpcClient) -> "XRPAccount":
         funded_wallet = await generate_faucet_wallet(client)
-        # Call the sync __init__
-        return cls(username, funded_wallet, client)
+        return cls(username=username, wallet=funded_wallet, client=client)
 
-    async def send_xrp(self, destination: str, amount: float):
-        """Standard async payment."""
-        payment_tx = Payment(
-            account=self.address,
-            amount=xrp_to_drops(amount),
-            destination=destination,
-        )
-        # Await the submission using the stored client and wallet
-        return await submit_and_wait(payment_tx, self.client, self.wallet)
+    # ---------- Basic info ----------
+    async def get_xrp_balance(self) -> float:
+        resp = await self.client.request(AccountInfo(account=self.address, ledger_index="validated"))
+        drops = int(resp.result["account_data"]["Balance"])
+        return drops / 1_000_000
 
-    async def create_time_escrow(self, destination: str, amount: float, delay_seconds: int):
-        """Async time-locked escrow."""
-        # Calculate Ripple Epoch time (seconds since 2000-01-01)
-        finish_time = datetime.now() + timedelta(seconds=delay_seconds)
-        ripple_time = datetime_to_ripple_time(finish_time)
-
-        escrow_tx = EscrowCreate(
-            account=self.address,
-            amount=xrp_to_drops(amount),
-            destination=destination,
-            finish_after=ripple_time
-        )
-        return await submit_and_wait(escrow_tx, self.client, self.wallet)
-
-    # Add this method to your XRPAccount class
-    async def set_trust_line(self, currency_code: str, issuer_address: str, limit: str = "1000000"):
+    async def _get_trustline_line(self, account_address: str, currency: str, issuer: str) -> Optional[Dict[str, Any]]:
         """
-        Establishes a trust line so the account can hold and receive tokens.
+        Reads trustline data from `account_address` with peer=issuer, returns the matching line if exists.
         """
-        trust_set_tx = TrustSet(
+        req = AccountLines(account=account_address, peer=issuer)
+        resp = await self.client.request(req)
+        lines = resp.result.get("lines", [])
+        for line in lines:
+            if line.get("currency") == currency and line.get("account") == issuer:
+                return line
+        # Some servers return lines without "account" matching logic exactly; currency+peer is usually enough:
+        for line in lines:
+            if line.get("currency") == currency:
+                return line
+        return None
+
+    async def has_trustline(self, account_address: str, currency: str, issuer: str) -> bool:
+        return (await self._get_trustline_line(account_address, currency, issuer)) is not None
+
+    async def trustline_remaining_space(self, account_address: str, currency: str, issuer: str) -> Optional[float]:
+        """
+        Returns how much more of this token the account can receive (limit - balance).
+        If no trustline exists, returns None.
+        """
+        line = await self._get_trustline_line(account_address, currency, issuer)
+        if not line:
+            return None
+
+        limit = float(line.get("limit", "0"))
+        balance = float(line.get("balance", "0"))
+        # For typical holders, balance is >= 0. Remaining receiving capacity:
+        return limit - balance
+
+    # ---------- XRP: instant ----------
+    async def send_xrp(self, destination: str, amount_xrp: float) -> Dict[str, Any]:
+        tx = Payment(
+            account=self.address,
+            destination=destination,
+            amount=xrp_to_drops(amount_xrp),
+        )
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        return resp.result
+
+    # ---------- XRP: timed escrow ----------
+    async def create_time_escrow_xrp(
+        self,
+        destination: str,
+        amount_xrp: float,
+        release_time_utc: datetime,
+        cancel_after_utc: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """
+        Creates an XRP escrow. Destination can finish AFTER release_time_utc.
+        Returns escrow_sequence (the EscrowCreate tx Sequence).
+        """
+        tx = EscrowCreate(
+            account=self.address,
+            destination=destination,
+            amount=xrp_to_drops(amount_xrp),
+            finish_after=to_ripple_time(release_time_utc),
+            cancel_after=to_ripple_time(cancel_after_utc) if cancel_after_utc else None,
+        )
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        escrow_sequence = resp.result.get("tx_json", {}).get("Sequence")
+        if escrow_sequence is None:
+            raise RuntimeError(f"Could not read escrow sequence from: {resp.result}")
+        return {"escrow_sequence": int(escrow_sequence), "tx_result": resp.result}
+
+    async def finish_escrow(self, owner_address: str, escrow_sequence: int, fulfillment_hex: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Finish an escrow. If it has a Condition, you must pass fulfillment_hex.
+        """
+        tx = EscrowFinish(
+            account=self.address,   # the finisher
+            owner=owner_address,    # escrow creator
+            offer_sequence=int(escrow_sequence),
+            fulfillment=fulfillment_hex,
+        )
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        return resp.result
+
+    # ---------- Trustlines ----------
+    async def set_trust_line(self, currency: str, issuer: str, limit: str = "1000000") -> Dict[str, Any]:
+        tx = TrustSet(
             account=self.address,
             limit_amount={
-                "currency": currency_code,
-                "issuer": issuer_address,
-                "value": limit
-            }
-        )
-        # Await the submission using your async client
-        response = await submit_and_wait(trust_set_tx, self.client, self.wallet)
-
-        print(f"\n[TRUSTLINE - {self.username}]")
-        print(f"✅ Trust established for {currency_code} from issuer {issuer_address}")
-        return response
-
-    async def has_trustline(self, currency: str, issuer: str):
-        """Checks if this account can actually hold the specified token."""
-        request = AccountLines(account=self.address, peer=issuer)
-        response = await self.client.request(request)
-
-        lines = response.result.get("lines", [])
-        # Look for a matching currency in the account's lines
-        return any(line["currency"] == currency for line in lines)
-    # Add this method to your XRPAccount class
-    async def send_token(self, destination: str, currency_code: str, issuer_address: str, amount: str):
-        """
-        Check recipient's trust line before sending tokens.
-        """
-        # 1. Request the recipient's trust lines
-        # We filter by 'peer' to see lines specifically with the issuer
-        request = AccountLines(account=destination, peer=issuer_address)
-        response = await self.client.request(request)
-
-        if not response.is_successful():
-            print(f"Error: Could not retrieve account lines for {destination}")
-            return
-
-        # 2. Search for a matching trust line
-        # The 'lines' array contains objects with 'currency', 'limit', etc.
-        lines = response.result.get("lines", [])
-        matching_line = next((l for l in lines if l["currency"] == currency_code), None)
-
-        if not matching_line:
-            print(f"Sorry, can't send tokens to this user as they haven't set a trust line for {currency_code}.")
-            return
-
-        # 3. Check the limit
-        # The 'limit' field is the max the recipient is willing to hold
-        # 'balance' is their current balance (negative if they owe, positive if they hold)
-        limit = float(matching_line["limit"])
-        current_balance = float(matching_line["balance"])
-        available_space = limit - current_balance
-
-        if float(amount) > available_space:
-            print(f"Sorry, you are sending too much. Their limit only allows {available_space} more {currency_code}.")
-            return
-
-        # 4. If all checks pass, proceed with payment
-        payment_tx = Payment(
-            account=self.address,
-            destination=destination,
-            amount={
-                "currency": currency_code,
-                "issuer": issuer_address,
-                "value": str(amount)
-            }
-        )
-        return await submit_and_wait(payment_tx, self.client, self.wallet)
-
-    # Add to your XRPAccount class
-    async def create_token_escrow(self, destination: str, currency: str, issuer: str, amount: str, delay_seconds: int):
-        """
-        Escrow tokens instead of XRP.
-        Requires XLS-85 amendment to be active on the network.
-        """
-        cancel_time = datetime.now() + timedelta(seconds=delay_seconds + 3600)  # Must have cancel_after for tokens
-
-        escrow_tx = EscrowCreate(
-            account=self.address,
-            destination=destination,
-            amount={
                 "currency": currency,
                 "issuer": issuer,
-                "value": amount
+                "value": limit,
             },
-            # For token escrows, CancelAfter is often mandatory
-            cancel_after=datetime_to_ripple_time(cancel_time)
         )
-        return await submit_and_wait(escrow_tx, self.client, self.wallet)
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        return resp.result
 
-    async def create_offer(self, want_currency: str, want_issuer: str, want_amount: str,
-                           give_currency: str, give_issuer: str, give_amount: str):
+    # ---------- Tokens (IOUs): safe send ----------
+    async def send_token_checked(self, destination: str, currency: str, issuer: str, amount: str) -> Dict[str, Any]:
         """
-        Standard DEX Trade: Give Token A to get Token B.
-        To trade for XRP, set the XRP amount as a string of drops (no dict).
+        Sends token only if the destination has a trustline AND has enough remaining space.
         """
-        # Define what you are giving (e.g., AUD)
-        taker_gets = {"currency": give_currency, "issuer": give_issuer, "value": give_amount}
+        remaining = await self.trustline_remaining_space(destination, currency, issuer)
+        if remaining is None:
+            raise ValueError(f"Destination has NO trustline for {currency}.{issuer}")
+        if float(amount) > remaining:
+            raise ValueError(f"Destination trustline limit too small. Remaining space: {remaining} {currency}")
 
-        # Define what you want (e.g., INR)
-        taker_pays = {"currency": want_currency, "issuer": want_issuer, "value": want_amount}
-
-        offer_tx = OfferCreate(
-            account=self.address,
-            taker_gets=taker_gets,
-            taker_pays=taker_pays
-        )
-
-        response = await submit_and_wait(offer_tx, self.client, self.wallet)
-        print(
-            f"✅ OFFER CREATED: {self.username} is offering {give_amount} {give_currency} for {want_amount} {want_currency}")
-        return response
-
-    async def step_1_generate_condition(self):
-        """Generates a valid XRPL Crypto-Condition."""
-        # 1. Create a random 32-byte secret
-        preimage_bytes = os.urandom(32)
-        preimage_hex = preimage_bytes.hex().upper()
-
-        # 2. Hash it
-        sha256_hash = hashlib.sha256(preimage_bytes).digest()
-
-        # 3. XRPL format for SHA-256 conditions:
-        # Prefix 'A0258020' + the 32-byte hash
-        # 'A0' = Type, '25' = Total Length, '80' = Tag, '20' = Hash Length (32 bytes)
-        condition = f"A0258020{sha256_hash.hex().upper()}"
-
-        print(f"\n[STEP 1 - {self.username}]")
-        print(f"🔑 Secret (Preimage): {preimage_hex}")
-        print(f"🔒 Condition (Formatted): {condition}")
-        return preimage_hex, condition
-
-    async def step_2_create_token_lock(self, destination: str, currency: str, issuer: str, amount: str, condition: str):
-        """
-        Lock Token A (AUD) or Token B (INR) in Escrow.
-        """
-        cancel_time = datetime_to_ripple_time(datetime.now() + timedelta(hours=1))
-
-        # Token amount must be a dictionary
-        token_amount = {
-            "currency": currency,
-            "issuer": issuer,
-            "value": amount
-        }
-
-        escrow_tx = EscrowCreate(
+        tx = Payment(
             account=self.address,
             destination=destination,
-            amount=token_amount,
-            condition=condition,  # Use the A0258020 prefix from the previous fix
-            cancel_after=cancel_time
+            amount={"currency": currency, "issuer": issuer, "value": str(amount)},
         )
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        return resp.result
 
-        response = await submit_and_wait(escrow_tx, self.client, self.wallet)
-        escrow_id = response.result["Sequence"]
-        print(f"💰 {amount} {currency} Locked in Escrow (ID: {escrow_id})")
-        return escrow_id
-
-    async def step_3_finish_trade(self, owner_address: str, escrow_id: int, secret_preimage: str):
+    # ---------- DEX OfferCreate: checked ----------
+    async def create_offer_checked(
+        self,
+        give_currency: str,
+        give_issuer: str,
+        give_amount: str,
+        want_currency: str,
+        want_issuer: str,
+        want_amount: str,
+    ) -> Dict[str, Any]:
         """
-        Reveals the secret with the mandatory A0228020 prefix.
+        Creates a public DEX offer: "I give give_amount give_currency to receive want_amount want_currency".
+        Safety checks:
+          - Must have trustline to RECEIVE want token (and space)
+          - If giving token, it's your responsibility to have balance; XRPL will enforce funding anyway
         """
-        # Preimage must be prefixed with 'A0228020' for XRPL
-        formatted_fulfillment = f"A0228020{secret_preimage}"
+        # Check you can RECEIVE what you want (trustline + space)
+        remaining = await self.trustline_remaining_space(self.address, want_currency, want_issuer)
+        if remaining is None:
+            raise ValueError(f"{self.username} has NO trustline for wanted token {want_currency}.{want_issuer}")
+        if float(want_amount) > remaining:
+            raise ValueError(f"{self.username} cannot receive {want_amount}; remaining space is {remaining} {want_currency}")
 
-        finish_tx = EscrowFinish(
+        taker_gets = {"currency": give_currency, "issuer": give_issuer, "value": str(give_amount)}
+        taker_pays = {"currency": want_currency, "issuer": want_issuer, "value": str(want_amount)}
+
+        tx = OfferCreate(
             account=self.address,
-            owner=owner_address,
-            offer_sequence=escrow_id,
-            fulfillment=formatted_fulfillment
+            taker_gets=taker_gets,
+            taker_pays=taker_pays,
+        )
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        return resp.result
+
+    # ---------- Token Escrow support check ----------
+    async def token_escrow_enabled(self) -> bool:
+        """
+        Token escrow (IOU escrow) requires TokenEscrow (XLS-85) amendment.
+        Not always enabled on every network/server.
+        """
+        resp = await self.client.request(ServerState())
+        amendments = resp.result.get("state", {}).get("validated_ledger", {}).get("amendments", [])
+
+        # TokenEscrow amendment ID (XLS-85). If your server returns only IDs, this works.
+        # If your server returns names differently, you may need to print amendments to confirm.
+        TOKEN_ESCROW_ID = "138B968F25822EFBF54C00F97031221C47B1EAB8321D93C7C2AEAF85F04EC5DF"
+        return TOKEN_ESCROW_ID in amendments
+
+    # ---------- Private swap using Token Escrow (ONLY if supported) ----------
+    async def create_conditional_token_escrow(
+        self,
+        destination: str,
+        currency: str,
+        issuer: str,
+        amount: str,
+        condition_hex: str,
+        cancel_after_utc: datetime,
+    ) -> Dict[str, Any]:
+        """
+        Locks IOU tokens in escrow with a crypto-condition (requires TokenEscrow enabled).
+        """
+        if not await self.token_escrow_enabled():
+            raise RuntimeError("TokenEscrow (XLS-85) is NOT enabled on this server/network. Use DEX offers instead.")
+
+        # Also ensure destination trustline exists & has space (so finish will succeed)
+        remaining = await self.trustline_remaining_space(destination, currency, issuer)
+        if remaining is None:
+            raise ValueError(f"Destination has NO trustline for {currency}.{issuer}")
+        if float(amount) > remaining:
+            raise ValueError(f"Destination trustline cannot receive {amount}; remaining is {remaining} {currency}")
+
+        tx = EscrowCreate(
+            account=self.address,
+            destination=destination,
+            amount={"currency": currency, "issuer": issuer, "value": str(amount)},
+            condition=condition_hex,
+            cancel_after=to_ripple_time(cancel_after_utc),
+        )
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        escrow_sequence = resp.result.get("tx_json", {}).get("Sequence")
+        if escrow_sequence is None:
+            raise RuntimeError(f"Could not read escrow sequence from: {resp.result}")
+        return {"escrow_sequence": int(escrow_sequence), "tx_result": resp.result}
+
+    async def private_swap_tokenA_for_tokenB_via_escrow(
+        self,
+        counterparty: "XRPAccount",
+        tokenA: Dict[str, str],
+        amountA: str,
+        tokenB: Dict[str, str],
+        amountB: str,
+        cancel_in_minutes: int = 60,
+    ) -> Dict[str, Any]:
+        """
+        Atomic-ish private swap using the SAME crypto-condition:
+          - You escrow TokenA to counterparty
+          - Counterparty escrow TokenB to you
+          - One side reveals fulfillment to finish, other uses same fulfillment to finish
+
+        Requires TokenEscrow enabled. Otherwise raise.
+        """
+        if not (await self.token_escrow_enabled()):
+            raise RuntimeError("TokenEscrow (XLS-85) not enabled here; cannot do token escrow swap.")
+
+        condition_hex, fulfillment_hex = make_condition_and_fulfillment()
+        cancel_after = now_utc() + timedelta(minutes=cancel_in_minutes)
+
+        # Lock both sides (checks trustlines + space)
+        a_lock = await self.create_conditional_token_escrow(
+            destination=counterparty.address,
+            currency=tokenA["currency"],
+            issuer=tokenA["issuer"],
+            amount=amountA,
+            condition_hex=condition_hex,
+            cancel_after_utc=cancel_after,
         )
 
-        await submit_and_wait(finish_tx, self.client, self.wallet)
-        print(f"🔓 TRADE FINISHED: {self.username} revealed the secret and claimed the tokens.")
+        b_lock = await counterparty.create_conditional_token_escrow(
+            destination=self.address,
+            currency=tokenB["currency"],
+            issuer=tokenB["issuer"],
+            amount=amountB,
+            condition_hex=condition_hex,
+            cancel_after_utc=cancel_after,
+        )
 
+        # Finish: you finish counterparty's escrow first (reveals fulfillment on-ledger)
+        finish1 = await self.finish_escrow(owner_address=counterparty.address, escrow_sequence=b_lock["escrow_sequence"], fulfillment_hex=fulfillment_hex)
+        # Counterparty uses the same fulfillment
+        finish2 = await counterparty.finish_escrow(owner_address=self.address, escrow_sequence=a_lock["escrow_sequence"], fulfillment_hex=fulfillment_hex)
+
+        return {
+            "condition_hex": condition_hex,
+            "fulfillment_hex": fulfillment_hex,  # treat like a secret; store securely if using real money
+            "escrow_A_sequence": a_lock["escrow_sequence"],
+            "escrow_B_sequence": b_lock["escrow_sequence"],
+            "finish_A_result": finish2,
+            "finish_B_result": finish1,
+        }
+
+
+# -------------------------
+# Demo / Tests in main()
+# -------------------------
 
 async def main():
-    # 1. Setup Connection
     client = AsyncJsonRpcClient("https://s.altnet.rippletest.net:51234")
 
-    # 2. Initialize "User" objects (Alice and Bob)
     alice = await XRPAccount.create_new("Alice", client)
     bob = await XRPAccount.create_new("Bob", client)
+    issuer = await XRPAccount.create_new("Issuer", client)  # we control issuer in this demo
 
-    # 3. Define Generic Tokens
-    # Change these to any Currency Code/Issuer for your project
-    ISSUER_ADDR = "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzgpEGP"
-    TOKEN_A = {"currency": "TKA", "issuer": ISSUER_ADDR}
-    TOKEN_B = {"currency": "TKB", "issuer": ISSUER_ADDR}
+    print("Alice:", alice.address)
+    print("Bob:  ", bob.address)
+    print("Iss:  ", issuer.address)
 
-    print(f"\n--- Starting Trade Tests for {alice.username} & {bob.username} ---")
+    # Define tokens issued by issuer
+    TOKEN_A = {"currency": "TKA", "issuer": issuer.address}
+    TOKEN_B = {"currency": "TKB", "issuer": issuer.address}
 
-    # --- SCENARIO 1: THE DEX (OfferCreate) ---
-    # Alice puts an order on the public book: "Giving 10 TokenA for 50 TokenB"
-    print("\n[SCENARIO: Public DEX Offer]")
-    await alice.create_offer(
+    # 1) Trustlines (limits)
+    print("\n[1] Setting trustlines...")
+    await alice.set_trust_line(TOKEN_A["currency"], TOKEN_A["issuer"], limit="1000")
+    await alice.set_trust_line(TOKEN_B["currency"], TOKEN_B["issuer"], limit="1000")
+    await bob.set_trust_line(TOKEN_A["currency"], TOKEN_A["issuer"], limit="1000")
+    await bob.set_trust_line(TOKEN_B["currency"], TOKEN_B["issuer"], limit="1000")
+
+    # 2) Issue tokens to Alice and Bob (issuer sends IOUs)
+    # NOTE: Recipient must have trustline or it will fail.
+    print("\n[2] Issuing tokens...")
+    await issuer.send_token_checked(alice.address, TOKEN_A["currency"], TOKEN_A["issuer"], "100")
+    await issuer.send_token_checked(bob.address, TOKEN_B["currency"], TOKEN_B["issuer"], "500")
+
+    # 3) Instant XRP
+    print("\n[3] Instant XRP payment Alice -> Bob...")
+    res_xrp = await alice.send_xrp(bob.address, 1.0)
+    print("engine_result:", res_xrp.get("engine_result"))
+
+    # 4) Timed XRP escrow (release in 45s)
+    print("\n[4] Timed XRP escrow Alice -> Bob (release in 45s)...")
+    release_time = now_utc() + timedelta(seconds=45)
+    cancel_time = release_time + timedelta(hours=1)
+    esc = await alice.create_time_escrow_xrp(bob.address, 2.0, release_time_utc=release_time, cancel_after_utc=cancel_time)
+    print("escrow_sequence:", esc["escrow_sequence"])
+    print("engine_result:", esc["tx_result"].get("engine_result"))
+
+    # 5) DEX Offer: Alice offers 10 TKA for 50 TKB
+    print("\n[5] DEX offer: Alice offers 10 TKA for 50 TKB...")
+    offer = await alice.create_offer_checked(
         give_currency=TOKEN_A["currency"], give_issuer=TOKEN_A["issuer"], give_amount="10",
-        want_currency=TOKEN_B["currency"], want_issuer=TOKEN_B["issuer"], want_amount="50"
+        want_currency=TOKEN_B["currency"], want_issuer=TOKEN_B["issuer"], want_amount="50",
     )
+    print("engine_result:", offer.get("engine_result"))
 
-    # --- SCENARIO 2: THE SECURE SWAP (Escrow) ---
-    # This is the 1-on-1 private trade using a cryptographic lock
-    print("\n[SCENARIO: Private Escrow Swap]")
+    # 6) Private swap via token escrow (if enabled)
+    print("\n[6] Private swap via token escrow (only if TokenEscrow enabled)...")
+    try:
+        swap = await alice.private_swap_tokenA_for_tokenB_via_escrow(
+            counterparty=bob,
+            tokenA=TOKEN_A, amountA="10",
+            tokenB=TOKEN_B, amountB="50",
+            cancel_in_minutes=60,
+        )
+        print("Swap done. Escrows:", swap["escrow_A_sequence"], swap["escrow_B_sequence"])
+        print("Finish results:", swap["finish_A_result"].get("engine_result"), swap["finish_B_result"].get("engine_result"))
+    except Exception as e:
+        print("Token escrow swap not available here:", str(e))
+        print("Use DEX (OfferCreate) for token-for-token trades on this network.")
 
-    # Step 1: Alice generates the secret 'Key' and the 'Lock'
-    secret, lock = await alice.step_1_generate_condition()
-
-    # Step 2: Alice locks her 10 TokenA for Bob using the 'Lock'
-    a_esc_id = await alice.step_2_create_token_lock(
-        destination=bob.address,
-        currency=TOKEN_A["currency"],
-        issuer=TOKEN_A["issuer"],
-        amount="10",
-        condition=lock
-    )
-
-    # Step 3: Bob locks his 50 TokenB for Alice using the SAME 'Lock'
-    b_esc_id = await bob.step_2_create_token_lock(
-        destination=alice.address,
-        currency=TOKEN_B["currency"],
-        issuer=TOKEN_B["issuer"],
-        amount="50",
-        condition=lock
-    )
-
-    # Step 4: Completion (Alice reveals secret to get TokenB, Bob then uses it to get TokenA)
-    # Alice finishes Bob's escrow
-    await alice.step_3_finish_trade(bob.address, b_esc_id, secret)
-    # Bob finishes Alice's escrow
-    await bob.step_3_finish_trade(alice.address, a_esc_id, secret)
-
-    print("\n✅ All generic trade logic verified.")
+    await client.close()
 
 
 if __name__ == "__main__":
