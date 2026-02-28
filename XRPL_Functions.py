@@ -2,16 +2,13 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, Tuple
-
 from xrpl.asyncio.clients import AsyncJsonRpcClient
 from xrpl.asyncio.wallet import generate_faucet_wallet
 from xrpl.wallet import Wallet
-
 from xrpl.models.requests import AccountInfo, AccountLines, ServerState
 from xrpl.models.transactions import Payment, TrustSet, OfferCreate, EscrowCreate, EscrowFinish
 from xrpl.asyncio.transaction import submit_and_wait
 from xrpl.utils import xrp_to_drops, datetime_to_ripple_time
-
 from cryptoconditions import PreimageSha256
 import os
 
@@ -261,61 +258,47 @@ class XRPAccount:
             raise RuntimeError(f"Could not read escrow sequence from: {resp.result}")
         return {"escrow_sequence": int(escrow_sequence), "tx_result": resp.result}
 
-    async def private_swap_tokenA_for_tokenB_via_escrow(
-        self,
-        counterparty: "XRPAccount",
-        tokenA: Dict[str, str],
-        amountA: str,
-        tokenB: Dict[str, str],
-        amountB: str,
-        cancel_in_minutes: int = 60,
+    async def take_offer_exact(
+            self,
+            offer_owner_give_currency: str,
+            offer_owner_give_issuer: str,
+            offer_owner_give_amount: str,
+            offer_owner_want_currency: str,
+            offer_owner_want_issuer: str,
+            offer_owner_want_amount: str,
     ) -> Dict[str, Any]:
         """
-        Atomic-ish private swap using the SAME crypto-condition:
-          - You escrow TokenA to counterparty
-          - Counterparty escrow TokenB to you
-          - One side reveals fulfillment to finish, other uses same fulfillment to finish
-
-        Requires TokenEscrow enabled. Otherwise raise.
+        Accept an existing offer by crossing it:
+        If Alice offered: give 10 TKA for 50 TKB,
+        then Bob submits: give 50 TKB for 10 TKA.
         """
-        if not (await self.token_escrow_enabled()):
-            raise RuntimeError("TokenEscrow (XLS-85) not enabled here; cannot do token escrow swap.")
-
-        condition_hex, fulfillment_hex = make_condition_and_fulfillment()
-        cancel_after = now_utc() + timedelta(minutes=cancel_in_minutes)
-
-        # Lock both sides (checks trustlines + space)
-        a_lock = await self.create_conditional_token_escrow(
-            destination=counterparty.address,
-            currency=tokenA["currency"],
-            issuer=tokenA["issuer"],
-            amount=amountA,
-            condition_hex=condition_hex,
-            cancel_after_utc=cancel_after,
+        tx = OfferCreate(
+            account=self.address,
+            taker_gets={"currency": offer_owner_want_currency, "issuer": offer_owner_want_issuer,
+                        "value": str(offer_owner_want_amount)},
+            taker_pays={"currency": offer_owner_give_currency, "issuer": offer_owner_give_issuer,
+                        "value": str(offer_owner_give_amount)},
         )
+        resp = await submit_and_wait(tx, self.client, self.wallet)
+        return resp.result
 
-        b_lock = await counterparty.create_conditional_token_escrow(
-            destination=self.address,
-            currency=tokenB["currency"],
-            issuer=tokenB["issuer"],
-            amount=amountB,
-            condition_hex=condition_hex,
-            cancel_after_utc=cancel_after,
-        )
+    async def get_token_balance(self, currency: str, issuer: str) -> float:
+        """
+        Returns how much of a token THIS account holds.
+        If no trustline exists, returns 0.0
+        """
+        request = AccountLines(account=self.address, peer=issuer)
+        response = await self.client.request(request)
 
-        # Finish: you finish counterparty's escrow first (reveals fulfillment on-ledger)
-        finish1 = await self.finish_escrow(owner_address=counterparty.address, escrow_sequence=b_lock["escrow_sequence"], fulfillment_hex=fulfillment_hex)
-        # Counterparty uses the same fulfillment
-        finish2 = await counterparty.finish_escrow(owner_address=self.address, escrow_sequence=a_lock["escrow_sequence"], fulfillment_hex=fulfillment_hex)
+        lines = response.result.get("lines", [])
 
-        return {
-            "condition_hex": condition_hex,
-            "fulfillment_hex": fulfillment_hex,  # treat like a secret; store securely if using real money
-            "escrow_A_sequence": a_lock["escrow_sequence"],
-            "escrow_B_sequence": b_lock["escrow_sequence"],
-            "finish_A_result": finish2,
-            "finish_B_result": finish1,
-        }
+        for line in lines:
+            if line.get("currency") == currency:
+                return float(line.get("balance", "0"))
+
+        return 0.0
+
+
 
 
 # -------------------------
@@ -345,7 +328,7 @@ async def main():
     await bob.set_trust_line(TOKEN_B["currency"], TOKEN_B["issuer"], limit="1000")
 
     # 2) Issue tokens to Alice and Bob (issuer sends IOUs)
-    # NOTE: Recipient must have trustline or it will fail.
+    # NOTE: Recipient must have trustline, or it will fail.
     print("\n[2] Issuing tokens...")
     await issuer.send_token_checked(alice.address, TOKEN_A["currency"], TOKEN_A["issuer"], "100")
     await issuer.send_token_checked(bob.address, TOKEN_B["currency"], TOKEN_B["issuer"], "500")
@@ -353,7 +336,12 @@ async def main():
     # 3) Instant XRP
     print("\n[3] Instant XRP payment Alice -> Bob...")
     res_xrp = await alice.send_xrp(bob.address, 1.0)
-    print("engine_result:", res_xrp.get("engine_result"))
+    print("result:", res_xrp["meta"]["TransactionResult"])
+    print("\n--- Balances before trade ---")
+    print("Alice TKA:", await alice.get_token_balance("TKA", issuer.address))
+    print("Alice TKB:", await alice.get_token_balance("TKB", issuer.address))
+    print("Bob   TKA:", await bob.get_token_balance("TKA", issuer.address))
+    print("Bob   TKB:", await bob.get_token_balance("TKB", issuer.address))
 
     # 4) Timed XRP escrow (release in 45s)
     print("\n[4] Timed XRP escrow Alice -> Bob (release in 45s)...")
@@ -361,33 +349,41 @@ async def main():
     cancel_time = release_time + timedelta(hours=1)
     esc = await alice.create_time_escrow_xrp(bob.address, 2.0, release_time_utc=release_time, cancel_after_utc=cancel_time)
     print("escrow_sequence:", esc["escrow_sequence"])
-    print("engine_result:", esc["tx_result"].get("engine_result"))
+    print("result:", esc["tx_result"]["meta"]["TransactionResult"])
 
+
+    # Wait for unlock time (+2s buffer)
+    wait_s = 47
+    print(f"\nWaiting {wait_s}s...")
+    await asyncio.sleep(wait_s)
+
+    print("\n[4c] Finish escrow after unlock (should succeed)...")
+    finish = await bob.finish_escrow(owner_address=alice.address, escrow_sequence=esc["escrow_sequence"])
+    print("result:", finish["meta"]["TransactionResult"])
     # 5) DEX Offer: Alice offers 10 TKA for 50 TKB
     print("\n[5] DEX offer: Alice offers 10 TKA for 50 TKB...")
     offer = await alice.create_offer_checked(
         give_currency=TOKEN_A["currency"], give_issuer=TOKEN_A["issuer"], give_amount="10",
         want_currency=TOKEN_B["currency"], want_issuer=TOKEN_B["issuer"], want_amount="50",
     )
-    print("engine_result:", offer.get("engine_result"))
-
+    print("result:", offer["meta"]["TransactionResult"])
+    print("\n[5b] Bob takes Alice's offer (trade executes)...")
+    take = await bob.take_offer_exact(
+        offer_owner_give_currency=TOKEN_A["currency"],
+        offer_owner_give_issuer=TOKEN_A["issuer"],
+        offer_owner_give_amount="10",
+        offer_owner_want_currency=TOKEN_B["currency"],
+        offer_owner_want_issuer=TOKEN_B["issuer"],
+        offer_owner_want_amount="50",
+    )
+    print("\n--- Balances after trade ---")
+    print("Alice TKA:", await alice.get_token_balance("TKA", issuer.address))
+    print("Alice TKB:", await alice.get_token_balance("TKB", issuer.address))
+    print("Bob   TKA:", await bob.get_token_balance("TKA", issuer.address))
+    print("Bob   TKB:", await bob.get_token_balance("TKB", issuer.address))
+    print("result:", take["meta"]["TransactionResult"])
     # 6) Private swap via token escrow (if enabled)
     print("\n[6] Private swap via token escrow (only if TokenEscrow enabled)...")
-    try:
-        swap = await alice.private_swap_tokenA_for_tokenB_via_escrow(
-            counterparty=bob,
-            tokenA=TOKEN_A, amountA="10",
-            tokenB=TOKEN_B, amountB="50",
-            cancel_in_minutes=60,
-        )
-        print("Swap done. Escrows:", swap["escrow_A_sequence"], swap["escrow_B_sequence"])
-        print("Finish results:", swap["finish_A_result"].get("engine_result"), swap["finish_B_result"].get("engine_result"))
-    except Exception as e:
-        print("Token escrow swap not available here:", str(e))
-        print("Use DEX (OfferCreate) for token-for-token trades on this network.")
-
-    await client.close()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
