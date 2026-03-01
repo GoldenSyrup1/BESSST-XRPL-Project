@@ -1,5 +1,7 @@
 import sqlite3
 import os
+import json
+from datetime import datetime, timedelta, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 import asyncio
 from XRPL_Functions import XRPAccount
@@ -7,6 +9,11 @@ from xrpl.asyncio.clients import AsyncJsonRpcClient
 
 DB_FILE = "xrpl_app.db"
 XRPL_CLIENT_URL = "https://s.altnet.rippletest.net:51234"
+
+
+def one_day_ago_iso() -> str:
+    """Demo helper: set signup time so account age is 1 day."""
+    return (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
@@ -23,9 +30,19 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL,
-            phone TEXT UNIQUE
+            phone TEXT UNIQUE,
+            signup_at TEXT,
+            tokens TEXT NOT NULL DEFAULT '{}'
         )
     ''')
+
+    # Schema migration: add signup_at/tokens for older databases.
+    user_columns = {row["name"] for row in c.execute("PRAGMA table_info(users)").fetchall()}
+    if "signup_at" not in user_columns:
+        c.execute("ALTER TABLE users ADD COLUMN signup_at TEXT")
+    if "tokens" not in user_columns:
+        c.execute("ALTER TABLE users ADD COLUMN tokens TEXT NOT NULL DEFAULT '{}'")
+        c.execute("UPDATE users SET tokens = '{}' WHERE tokens IS NULL OR TRIM(tokens) = ''")
     
     # Create Wallets table (1-to-1 with user for simplicity)
     c.execute('''
@@ -37,6 +54,9 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     ''')
+
+    # Demo requirement: all users should appear as 1 day old.
+    c.execute("UPDATE users SET signup_at = ?", (one_day_ago_iso(),))
     conn.commit()
     conn.close()
 
@@ -63,7 +83,10 @@ def add_user_and_wallet(username: str, password_hash: str, address: str, seed: s
     c = conn.cursor()
     try:
         username = username.lower()
-        c.execute('INSERT INTO users (username, password, phone) VALUES (?, ?, ?)', (username, password_hash, phone))
+        c.execute(
+            'INSERT INTO users (username, password, phone, signup_at) VALUES (?, ?, ?, ?)',
+            (username, password_hash, phone, one_day_ago_iso()),
+        )
         user_id = c.lastrowid
         c.execute('INSERT INTO wallets (user_id, address, seed) VALUES (?, ?, ?)', (user_id, address, seed))
         conn.commit()
@@ -73,6 +96,57 @@ def add_user_and_wallet(username: str, password_hash: str, address: str, seed: s
     finally:
         conn.close()
     return user_id
+
+
+def _parse_tokens_json(raw_tokens) -> dict:
+    if raw_tokens is None:
+        return {}
+    try:
+        parsed = json.loads(str(raw_tokens))
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+def get_user_tokens(user_id: int) -> dict:
+    conn = get_db_connection()
+    row = conn.execute("SELECT tokens FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    return _parse_tokens_json(row["tokens"]) if row else {}
+
+
+def get_user_tokens_by_username(username: str) -> dict:
+    user = get_user_by_username(username)
+    if not user:
+        return {}
+    return _parse_tokens_json(user["tokens"])
+
+
+def set_user_tokens(user_id: int, tokens: dict):
+    if not isinstance(tokens, dict):
+        raise ValueError("tokens must be a dictionary")
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE users SET tokens = ? WHERE id = ?",
+        (json.dumps(tokens), user_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def set_user_token_balance(user_id: int, token_name: str, amount):
+    key = str(token_name or "").strip().upper()
+    if not key:
+        raise ValueError("token_name cannot be empty")
+
+    try:
+        amount_value = float(amount)
+    except Exception as exc:
+        raise ValueError("amount must be numeric") from exc
+
+    tokens = get_user_tokens(user_id)
+    tokens[key] = amount_value
+    set_user_tokens(user_id, tokens)
 
 async def _seed_testnet_users():
     """Create 2 testnet users and perform an initial transaction between them to populate history."""

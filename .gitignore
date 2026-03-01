@@ -1,3 +1,6 @@
 .venv
 
 __pycache__
+enabled_tokens.db
+enabled_tokens.db-shm
+enabled_tokens.db-wal

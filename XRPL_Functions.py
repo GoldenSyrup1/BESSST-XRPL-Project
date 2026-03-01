@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any, Tuple, List
 from xrpl.asyncio.clients import AsyncJsonRpcClient
@@ -7,6 +8,7 @@ from xrpl.asyncio.wallet import generate_faucet_wallet
 from xrpl.wallet import Wallet
 from xrpl.models.requests import AccountInfo, AccountLines, AccountOffers, AccountTx, ServerState
 from xrpl.models.transactions import Payment, TrustSet, OfferCreate, OfferCancel, EscrowCreate, EscrowFinish
+from xrpl.models.amounts import IssuedCurrencyAmount
 from xrpl.asyncio.transaction import submit_and_wait
 from xrpl.utils import xrp_to_drops, datetime_to_ripple_time
 from cryptoconditions import PreimageSha256
@@ -54,6 +56,30 @@ class XRPAccount:
     async def create_new(cls, username: str, client: AsyncJsonRpcClient) -> "XRPAccount":
         funded_wallet = await generate_faucet_wallet(client)
         return cls(username=username, wallet=funded_wallet, client=client)
+
+    @staticmethod
+    def _issued_currency_amount(currency: str, issuer: str, value: str) -> IssuedCurrencyAmount:
+        if not str(issuer or "").strip():
+            raise ValueError(f"Issuer is required for non-XRP currency {currency}")
+        return IssuedCurrencyAmount(
+            currency=str(currency).upper(),
+            issuer=str(issuer).strip(),
+            value=str(value),
+        )
+
+    @staticmethod
+    def _offer_amount(currency: str, issuer: str, value: str):
+        if str(currency).upper() == "XRP":
+            try:
+                return xrp_to_drops(Decimal(str(value)))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError(f"Invalid XRP amount: {value}") from exc
+        return XRPAccount._issued_currency_amount(currency, issuer, value)
+
+    @staticmethod
+    def _ioc_flag() -> int:
+        # Immediate-or-Cancel: submit and consume available liquidity now; do not wait on book.
+        return 0x00020000
 
     # ---------- Basic info ----------
     async def get_xrp_balance(self) -> float:
@@ -146,11 +172,7 @@ class XRPAccount:
     async def set_trust_line(self, currency: str, issuer: str, limit: str = "1000000") -> Dict[str, Any]:
         tx = TrustSet(
             account=self.address,
-            limit_amount={
-                "currency": currency,
-                "issuer": issuer,
-                "value": limit,
-            },
+            limit_amount=self._issued_currency_amount(currency, issuer, limit),
         )
         resp = await submit_and_wait(tx, self.client, self.wallet)
         return resp.result
@@ -169,7 +191,7 @@ class XRPAccount:
         tx = Payment(
             account=self.address,
             destination=destination,
-            amount={"currency": currency, "issuer": issuer, "value": str(amount)},
+            amount=self._issued_currency_amount(currency, issuer, str(amount)),
         )
         resp = await submit_and_wait(tx, self.client, self.wallet)
         return resp.result
@@ -190,20 +212,44 @@ class XRPAccount:
           - Must have trustline to RECEIVE want token (and space)
           - If giving token, it's your responsibility to have balance; XRPL will enforce funding anyway
         """
-        # Check you can RECEIVE what you want (trustline + space)
-        remaining = await self.trustline_remaining_space(self.address, want_currency, want_issuer)
-        if remaining is None:
-            raise ValueError(f"{self.username} has NO trustline for wanted token {want_currency}.{want_issuer}")
-        if float(want_amount) > remaining:
-            raise ValueError(f"{self.username} cannot receive {want_amount}; remaining space is {remaining} {want_currency}")
+        give_currency = str(give_currency or "").upper()
+        want_currency = str(want_currency or "").upper()
 
-        taker_gets = {"currency": give_currency, "issuer": give_issuer, "value": str(give_amount)}
-        taker_pays = {"currency": want_currency, "issuer": want_issuer, "value": str(want_amount)}
+        # Check you can FUND what you are offering.
+        if give_currency == "XRP":
+            xrp_balance = await self.get_xrp_balance()
+            if float(give_amount) > xrp_balance:
+                raise ValueError(
+                    f"{self.username} has insufficient XRP balance to offer {give_amount} XRP "
+                    f"(balance: {xrp_balance} XRP)"
+                )
+        else:
+            give_line = await self._get_trustline_line(self.address, give_currency, give_issuer)
+            if give_line is None:
+                raise ValueError(f"{self.username} has NO trustline for offered token {give_currency}.{give_issuer}")
+            give_balance = float(give_line.get("balance", "0"))
+            if float(give_amount) > give_balance:
+                raise ValueError(
+                    f"{self.username} has insufficient {give_currency} balance to offer {give_amount} "
+                    f"(balance: {give_balance})"
+                )
+
+        # Check you can RECEIVE what you want (trustline + space) for non-XRP.
+        if want_currency != "XRP":
+            remaining = await self.trustline_remaining_space(self.address, want_currency, want_issuer)
+            if remaining is None:
+                raise ValueError(f"{self.username} has NO trustline for wanted token {want_currency}.{want_issuer}")
+            if float(want_amount) > remaining:
+                raise ValueError(f"{self.username} cannot receive {want_amount}; remaining space is {remaining} {want_currency}")
+
+        taker_gets = self._offer_amount(give_currency, give_issuer, str(give_amount))
+        taker_pays = self._offer_amount(want_currency, want_issuer, str(want_amount))
 
         tx = OfferCreate(
             account=self.address,
             taker_gets=taker_gets,
             taker_pays=taker_pays,
+            flags=self._ioc_flag(),
         )
         resp = await submit_and_wait(tx, self.client, self.wallet)
         return resp.result
@@ -256,7 +302,7 @@ class XRPAccount:
         tx = EscrowCreate(
             account=self.address,
             destination=destination,
-            amount={"currency": currency, "issuer": issuer, "value": str(amount)},
+            amount=self._issued_currency_amount(currency, issuer, str(amount)),
             condition=condition_hex,
             cancel_after=to_ripple_time(cancel_after_utc),
         )
@@ -282,10 +328,16 @@ class XRPAccount:
         """
         tx = OfferCreate(
             account=self.address,
-            taker_gets={"currency": offer_owner_want_currency, "issuer": offer_owner_want_issuer,
-                        "value": str(offer_owner_want_amount)},
-            taker_pays={"currency": offer_owner_give_currency, "issuer": offer_owner_give_issuer,
-                        "value": str(offer_owner_give_amount)},
+            taker_gets=self._offer_amount(
+                offer_owner_want_currency,
+                offer_owner_want_issuer,
+                str(offer_owner_want_amount),
+            ),
+            taker_pays=self._offer_amount(
+                offer_owner_give_currency,
+                offer_owner_give_issuer,
+                str(offer_owner_give_amount),
+            ),
         )
         resp = await submit_and_wait(tx, self.client, self.wallet)
         return resp.result

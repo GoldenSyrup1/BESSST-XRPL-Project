@@ -69,6 +69,7 @@
   }
 
   .nav-links { display: flex; align-items: center; gap: 36px; }
+  #page-landing .nav-links { margin-left: 75px; }
   .nav-links a {
     text-decoration: none; color: var(--black);
     font-size: 15px; font-weight: 500;
@@ -104,7 +105,17 @@
     background: repeating-linear-gradient(90deg, transparent, transparent 28px, rgba(200,230,240,0.18) 28px, rgba(200,230,240,0.18) 30px);
   }
 
-  .hero-content { position: relative; z-index: 2; max-width: 700px; padding: 0 24px; }
+  .hero-content {
+    position: relative;
+    z-index: 2;
+    width: min(700px, 100%);
+    margin: 0 auto;
+    padding: 0 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
 
   .hero-title {
     font-size: clamp(52px, 7vw, 80px); font-weight: 800; line-height: 1.1;

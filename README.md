@@ -16,10 +16,11 @@ This project now uses a clean split between templates and static assets.
 
 ```bash
 python3 -m pip install -r requirements.txt
+python3 scripts/create_enabled_tokens_db.py
 python3 app.py
 ```
 
 Open:
 
-- `http://127.0.0.1:5000/`
-- `http://127.0.0.1:5000/dashboard`
+- `http://127.0.0.1:5050/`
+- `http://127.0.0.1:5050/dashboard`

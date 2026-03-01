@@ -32,14 +32,11 @@
       <button class="nav-item" id="nav-trustline" onclick="showPage('trustline')">
         <span class="nav-icon">⬡</span><span class="nav-text">Enable a token</span>
       </button>
-      <button class="nav-item" id="nav-trade" onclick="requireTrustline('trade')">
-        <span class="nav-icon">⇄</span><span class="nav-text">Swap currencies</span>
-      </button>
       <button class="nav-item" id="nav-send" onclick="requireTrustline('send')">
         <span class="nav-icon">↑</span><span class="nav-text">Send money</span>
       </button>
       <button class="nav-item" id="nav-auth" onclick="showPage('auth')">
-        <span class="nav-icon">◉</span><span class="nav-text">Is this address safe?</span>
+        <span class="nav-icon">◉</span><span class="nav-text">Is this recipient safe?</span>
       </button>
       <div class="nav-section-label">View</div>
       <button class="nav-item" id="nav-escrows" onclick="showPage('escrows')">
@@ -75,8 +72,8 @@
 
       <div class="card" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
         <div>
-          <div class="field-label" style="margin-bottom:4px;">Your wallet address</div>
-          <div id="dashboard-wallet-address" style="font-size:13px; font-family:'SF Mono','Fira Code',monospace;">rConnected...abc</div>
+          <div class="field-label" style="margin-bottom:4px;">Your private identifier</div>
+          <div id="dashboard-wallet-address" style="font-size:13px;">No phone linked</div>
         </div>
         <div style="text-align:right;">
           <div class="field-label" style="margin-bottom:4px;">Balance</div>
@@ -128,18 +125,14 @@
         <div class="steps">
           <div class="step active"><div class="step-num">1</div> Create</div>
           <div class="step-line"></div>
-          <div class="step"><div class="step-num">2</div> Pending</div>
-          <div class="step-line"></div>
-          <div class="step"><div class="step-num">3</div> Match</div>
-          <div class="step-line"></div>
-          <div class="step"><div class="step-num">4</div> Confirm</div>
+          <div class="step"><div class="step-num">2</div> Confirm</div>
         </div>
         <div class="card">
           <div class="card-title">What do you want to swap?</div>
           <div class="wallet-bar">
-            <div class="wallet-dot"></div>
-            <span>Your wallet:</span>
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">rConnected...abc</span>
+          <div class="wallet-dot"></div>
+            <span>Phone:</span>
+            <span class="account-phone-display" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">No phone linked</span>
           </div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:500;">YOU'RE GIVING</div>
           <div class="field-row">
@@ -153,8 +146,8 @@
             </div>
           </div>
           <div class="field-group" id="sell-issuer-group" style="display:none;">
-            <label class="field-label">Sell issuer (optional override)</label>
-            <input type="text" id="sell-issuer" placeholder="Issuer address (auto-filled from registry)" />
+            <label class="field-label">Sell provider phone (optional override)</label>
+            <input type="text" id="sell-issuer" placeholder="Provider phone number" />
           </div>
           <div class="swap-divider">⇅</div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:500;">YOU'RE GETTING</div>
@@ -169,11 +162,16 @@
             </div>
           </div>
           <div class="field-group" id="buy-issuer-group" style="display:none;">
-            <label class="field-label">Buy issuer (optional override)</label>
-            <input type="text" id="buy-issuer" placeholder="Issuer address (auto-filled from registry)" />
+            <label class="field-label">Buy provider phone (optional override)</label>
+            <input type="text" id="buy-issuer" placeholder="Provider phone number" />
           </div>
-          <button class="btn btn-primary btn-full" style="margin-top:6px;" onclick="goTradeScreen(2)">Start swap →</button>
+          <button class="btn btn-primary btn-full" style="margin-top:6px;" onclick="startTradeFlow()">Start swap →</button>
           <div id="trade-status-message" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
+          <div style="margin-top:16px;">
+            <div class="card-title" style="margin-bottom:8px;">Live market offers for this pair</div>
+            <div id="trade-market-note" style="font-size:12px;color:var(--muted);margin-bottom:8px;">Choose a pair to load available offers.</div>
+            <div id="trade-market-offers-list"></div>
+          </div>
         </div>
       </div>
 
@@ -241,7 +239,7 @@
           <div class="info-row"><span class="label">Swap ID</span><span class="value" id="match-id">—</span></div>
           <div class="info-row"><span class="label">You give</span><span class="value" id="match-sell">—</span></div>
           <div class="info-row"><span class="label">You get</span><span class="value" id="match-buy">—</span></div>
-          <div class="info-row"><span class="label">Matched with</span><span class="value">rXRPL...match42</span></div>
+          <div class="info-row"><span class="label">Matched with</span><span class="value">Private counterparty</span></div>
           <div class="info-row"><span class="label">Network fee</span><span class="value">Tiny (auto)</span></div>
           <div class="info-row"><span class="label">Status</span><span class="badge badge-matched"><span class="badge-dot"></span> Ready</span></div>
         </div>
@@ -258,11 +256,7 @@
         <div class="steps">
           <div class="step done"><div class="step-num">✓</div> Create</div>
           <div class="step-line"></div>
-          <div class="step done"><div class="step-num">✓</div> Pending</div>
-          <div class="step-line"></div>
-          <div class="step done"><div class="step-num">✓</div> Match</div>
-          <div class="step-line"></div>
-          <div class="step active"><div class="step-num">4</div> Confirm</div>
+          <div class="step active"><div class="step-num">2</div> Confirm</div>
         </div>
         <div class="card" style="text-align:center;">
           <div class="confirm-icon">✓</div>
@@ -296,17 +290,20 @@
       </div>
 
       <h1>Send</h1>
-      <p class="page-subtitle">Send XRP or other tokens directly to someone's wallet</p>
+      <p class="page-subtitle">Send XRP or other tokens using a recipient phone number</p>
       <div class="card">
         <div class="card-title">Send now</div>
         <div class="wallet-bar">
           <div class="wallet-dot"></div>
-          <span>From your wallet:</span>
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">rConnected...abc</span>
+          <span>From phone:</span>
+          <span class="account-phone-display" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">No phone linked</span>
         </div>
         <div class="field-group">
-          <label class="field-label">Send to (wallet address)</label>
-          <input type="text" id="send-destination" placeholder="Paste their wallet address here" />
+          <label class="field-label">Send to (phone number)</label>
+          <input type="text" id="send-destination" placeholder="Enter recipient phone number (e.g. 555-0101)" />
+          <div style="font-size:12px;color:var(--muted);margin-top:6px;">
+            Recipient phone numbers are resolved to mapped accounts automatically.
+          </div>
         </div>
         <div class="field-row">
           <div class="field-group">
@@ -319,8 +316,8 @@
           </div>
         </div>
         <div class="field-group" id="send-issuer-group" style="display:none;">
-          <label class="field-label">Token issuer (optional override)</label>
-          <input type="text" id="send-issuer" placeholder="Issuer address (auto-filled from registry)" />
+          <label class="field-label">Token provider phone (optional override)</label>
+          <input type="text" id="send-issuer" placeholder="Provider phone number" />
         </div>
         <button class="btn btn-primary btn-full" id="send-btn" onclick="sendCurrency()">Send →</button>
         <div id="send-status" style="font-size:12px;color:var(--muted);margin-top:10px;"></div>
@@ -350,12 +347,12 @@
           <div class="card-title">Which token do you want to enable?</div>
           <div class="wallet-bar">
             <div class="wallet-dot"></div>
-            <span>Wallet:</span>
-            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">rConnected...abc</span>
+            <span>Phone:</span>
+            <span class="account-phone-display" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-left:4px;">No phone linked</span>
           </div>
           <div class="field-group">
-            <label class="field-label">Token provider address</label>
-            <input type="text" id="tl-issuer" placeholder="Paste the provider's wallet address" />
+            <label class="field-label">Token provider phone number</label>
+            <input type="text" id="tl-issuer" placeholder="Enter the provider's phone number" />
           </div>
           <div class="field-row">
             <div class="field-group">
@@ -462,24 +459,24 @@
           <div style="font-size:16px;font-weight:700;margin-bottom:4px;">Token enabled!</div>
           <div style="font-size:13px;color:var(--muted);">
             <span id="tl-confirm-currency">USD</span> is now enabled. Provider:
-            <span id="tl-confirm-issuer" style="font-family:monospace;">r...abc</span>
+            <span id="tl-confirm-issuer" style="font-family:inherit;">Hidden</span>
           </div>
         </div>
 
         <div class="card">
           <div class="card-title">Want to check who you're sending to?</div>
           <div style="font-size:13px;color:var(--muted);margin-bottom:14px;">
-            Paste a wallet address below to check it's safe and that they can receive <span id="tl-dest-currency" style="font-weight:600;">your currency</span>.
+            Enter a recipient phone number below to check it's safe and that they can receive <span id="tl-dest-currency" style="font-weight:600;">your currency</span>.
           </div>
 
           <div class="auth-input-area">
-            <input type="text" id="tl-auth-input" placeholder="Paste destination address e.g. rXRPL..." />
+            <input type="text" id="tl-auth-input" placeholder="Enter destination phone number" />
             <button class="auth-check-btn" onclick="runTlAuthCheck()">Check →</button>
           </div>
 
           <!-- BACKEND HOOK POINT
                POST /api/check-address
-               Body: { "address": "rXRPL...", "currency": "USD", "issuer": "r..." }
+               Body: { "phone": "555-0202", "currency": "USD", "issuer_phone": "555-0101" }
                Returns: { valid, age_months, blacklisted, tx_count, has_trustline, risk }
           -->
 
@@ -495,7 +492,7 @@
               <div class="auth-check-row">
                 <div class="auth-check-icon" id="tl-chk-validity-icon">◉</div>
                 <div class="auth-check-body">
-                  <div class="auth-check-title">Does this address exist?</div>
+                  <div class="auth-check-title">Does this recipient account exist?</div>
                   <div class="auth-check-desc" id="tl-chk-validity-desc">—</div>
                 </div>
               </div>
@@ -516,7 +513,6 @@
               <div class="auth-check-row">
                 <div class="auth-check-icon" id="tl-chk-activity-icon">≡</div>
                 <div class="auth-check-body">
-                  <div class="auth-check-title">How active is this account?</div>
                   <div class="auth-check-desc" id="tl-chk-activity-desc">—</div>
                 </div>
               </div>
@@ -529,11 +525,11 @@
               </div>
             </div>
 
-            <div class="auth-overall safe" id="tl-auth-overall" style="margin-top:4px;">
+              <div class="auth-overall safe" id="tl-auth-overall" style="margin-top:4px;">
               <div class="auth-overall-icon" id="tl-auth-overall-icon">—</div>
               <div>
                 <div class="auth-overall-title" id="tl-auth-overall-title">Overall Safety</div>
-                <div class="auth-overall-desc" id="tl-auth-overall-desc">Enter an address above to get started.</div>
+                <div class="auth-overall-desc" id="tl-auth-overall-desc">Enter a phone number above to get started.</div>
               </div>
             </div>
 
@@ -591,7 +587,7 @@
             <div class="escrow-row-left">
               <div class="escrow-row-id">PAY-A3F8C2 · Sequence #104</div>
               <div class="escrow-row-amount">300 XRP</div>
-              <div class="escrow-row-dest">To: rXRPL...dest01</div>
+              <div class="escrow-row-dest">To: Private recipient</div>
             </div>
             <div class="escrow-row-right">
               <span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span>
@@ -601,7 +597,7 @@
           <div class="escrow-row-detail">
             <div class="detail-grid">
               <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">300 XRP</div></div>
-              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">rXRPL...dest01</div></div>
+              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">Private recipient</div></div>
               <div class="detail-cell"><div class="detail-label">Release date</div><div class="detail-value">Mar 15, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Cancel deadline</div><div class="detail-value">Apr 15, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Scheduled on</div><div class="detail-value">Feb 28, 2026</div></div>
@@ -624,7 +620,7 @@
             <div class="escrow-row-left">
               <div class="escrow-row-id">PAY-B91D44 · Sequence #98</div>
               <div class="escrow-row-amount">200 XRP</div>
-              <div class="escrow-row-dest">To: rXRPL...dest02</div>
+              <div class="escrow-row-dest">To: Private recipient</div>
             </div>
             <div class="escrow-row-right">
               <span class="badge badge-matched"><span class="badge-dot"></span> Claimable</span>
@@ -634,7 +630,7 @@
           <div class="escrow-row-detail">
             <div class="detail-grid">
               <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">200 XRP</div></div>
-              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">rXRPL...dest02</div></div>
+              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">Private recipient</div></div>
               <div class="detail-cell"><div class="detail-label">Release date</div><div class="detail-value">Feb 20, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Cancel deadline</div><div class="detail-value">Mar 20, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Scheduled on</div><div class="detail-value">Jan 20, 2026</div></div>
@@ -658,7 +654,7 @@
             <div class="escrow-row-left">
               <div class="escrow-row-id">PAY-C02E71 · Sequence #112</div>
               <div class="escrow-row-amount">150 XRP</div>
-              <div class="escrow-row-dest">To: rXRPL...dest03</div>
+              <div class="escrow-row-dest">To: Private recipient</div>
             </div>
             <div class="escrow-row-right">
               <span class="badge badge-pending"><span class="badge-dot pulse"></span> Pending</span>
@@ -668,7 +664,7 @@
           <div class="escrow-row-detail">
             <div class="detail-grid">
               <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">150 XRP</div></div>
-              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">rXRPL...dest03</div></div>
+              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">Private recipient</div></div>
               <div class="detail-cell"><div class="detail-label">Release date</div><div class="detail-value">Mar 5, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Cancel deadline</div><div class="detail-value">Mar 7, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Scheduled on</div><div class="detail-value">Feb 25, 2026</div></div>
@@ -691,7 +687,7 @@
             <div class="escrow-row-left">
               <div class="escrow-row-id">PAY-D44A09 · Sequence #87</div>
               <div class="escrow-row-amount">500 XRP</div>
-              <div class="escrow-row-dest">To: rXRPL...dest04</div>
+              <div class="escrow-row-dest">To: Private recipient</div>
             </div>
             <div class="escrow-row-right">
               <span class="badge badge-expired"><span class="badge-dot"></span> Expired</span>
@@ -701,7 +697,7 @@
           <div class="escrow-row-detail">
             <div class="detail-grid">
               <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">500 XRP</div></div>
-              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">rXRPL...dest04</div></div>
+              <div class="detail-cell"><div class="detail-label">Sending to</div><div class="detail-value">Private recipient</div></div>
               <div class="detail-cell"><div class="detail-label">Release date</div><div class="detail-value">Jan 1, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Cancel deadline</div><div class="detail-value">Feb 1, 2026</div></div>
               <div class="detail-cell"><div class="detail-label">Scheduled on</div><div class="detail-value">Dec 1, 2025</div></div>
@@ -731,16 +727,16 @@
 
     <!-- ─── AUTHENTICATOR ─── -->
     <div id="page-auth" class="page">
-      <h1>Is this address safe?</h1>
-      <p class="page-subtitle">Paste any wallet address to see if it looks safe before you send money to it</p>
+      <h1>Is this recipient safe?</h1>
+      <p class="page-subtitle">Enter any phone number to see if it looks safe before you send money</p>
 
       <div class="card">
-        <div class="card-title">Is this address safe?</div>
+        <div class="card-title">Is this recipient safe?</div>
         <div class="auth-input-area">
-          <input type="text" id="auth-input" placeholder="Paste a wallet address to check..." />
+          <input type="text" id="auth-input" placeholder="Enter a phone number to check..." />
           <button class="auth-check-btn" onclick="runAuthCheck()">Check →</button>
         </div>
-        <div style="font-size:11px; color:var(--muted);">We'll check if it's real, how old it is, and whether it's been flagged for scams.</div>
+        <div style="font-size:11px; color:var(--muted);">We'll check if it maps to a real account, how old it is, and whether it's been flagged for scams.</div>
       </div>
 
       <!-- Loading skeleton (hidden by default) -->
@@ -762,8 +758,8 @@
           <div class="auth-check-row">
             <div class="auth-check-icon" id="chk-validity-icon">◉</div>
             <div class="auth-check-body">
-              <div class="auth-check-title">Does this address exist?</div>
-              <div class="auth-check-desc" id="chk-validity-desc">Checking if this address exists on the XRPL ledger...</div>
+              <div class="auth-check-title">Does this recipient account exist?</div>
+              <div class="auth-check-desc" id="chk-validity-desc">Checking if this recipient account exists on the XRPL ledger...</div>
             </div>
           </div>
 
@@ -779,7 +775,7 @@
             <div class="auth-check-icon" id="chk-blacklist-icon">◎</div>
             <div class="auth-check-body">
               <div class="auth-check-title">Scam check</div>
-              <div class="auth-check-desc" id="chk-blacklist-desc">Checking if this address has been flagged for fraud...</div>
+              <div class="auth-check-desc" id="chk-blacklist-desc">Checking if this recipient has been flagged for fraud...</div>
             </div>
           </div>
 
@@ -808,7 +804,7 @@
           <div class="auth-overall-icon" id="auth-overall-icon">—</div>
           <div>
             <div class="auth-overall-title" id="auth-overall-title">Our verdict</div>
-            <div class="auth-overall-desc" id="auth-overall-desc">Enter an address above to get started.</div>
+            <div class="auth-overall-desc" id="auth-overall-desc">Enter a phone number above to get started.</div>
           </div>
         </div>
 
@@ -829,7 +825,7 @@
         <div class="balance-amount" id="wallet-total-balance">1,482.50 <span style="font-size:22px;opacity:0.5">XRP</span></div>
         <div class="balance-fiat">≈ $2,964.00 USD · $4,600.00 AUD</div>
         <div class="balance-address" id="wallet-main-address" onclick="copyWalletAddress()">
-          <span>rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh</span>
+          <span class="account-phone-display">No phone linked</span>
           <span style="font-size:10px">⧉</span>
         </div>
       </div>
@@ -982,9 +978,9 @@
             <div style="width:160px;height:160px;border:1px solid var(--border);border-radius:12px;margin:0 auto 14px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);">QR Code</div>
           </div>
           <div class="field-group">
-            <label class="field-label">Your wallet address</label>
-            <div class="hash-box" onclick="copyWalletAddress()">rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh</div>
-            <div class="copy-hint">Tap to copy</div>
+            <label class="field-label">Your private identifier</label>
+            <div class="hash-box" onclick="copyWalletAddress()"><span class="account-phone-display">No phone linked</span></div>
+            <div class="copy-hint">Tap to copy your identifier</div>
           </div>
           <div class="field-group">
             <label class="field-label">Sending to Tag (optional)</label>
@@ -1008,17 +1004,17 @@
           </div>
           <div class="token-row">
             <div class="token-logo" style="background:#dbeafe;border-color:#bfdbfe;color:#1e40af">USD</div>
-            <div class="token-body"><div class="token-name">USD Stablecoin</div><div class="token-issuer">rvYAfW… · Gatehub</div></div>
+            <div class="token-body"><div class="token-name">USD Stablecoin</div><div class="token-issuer">Provider hidden · Gatehub</div></div>
             <div class="token-right"><div class="token-amount">300.00</div><div class="token-fiat">≈ $462.00 AUD</div></div>
           </div>
           <div class="token-row">
             <div class="token-logo" style="background:#f0fdf4;border-color:#bbf7d0;color:#166534">EUR</div>
-            <div class="token-body"><div class="token-name">EUR</div><div class="token-issuer">rhub8V… · Bitstamp</div></div>
+            <div class="token-body"><div class="token-name">EUR</div><div class="token-issuer">Provider hidden · Bitstamp</div></div>
             <div class="token-right"><div class="token-amount">50.00</div><div class="token-fiat">≈ $83.00 AUD</div></div>
           </div>
           <div class="token-row">
             <div class="token-logo" style="background:#fef9c3;border-color:#fde68a;color:#854d0e">BTC</div>
-            <div class="token-body"><div class="token-name">Wrapped Bitcoin</div><div class="token-issuer">rPFLkx… · XRPL Bridge</div></div>
+            <div class="token-body"><div class="token-name">Wrapped Bitcoin</div><div class="token-issuer">Provider hidden · XRPL Bridge</div></div>
             <div class="token-right"><div class="token-amount">0.0024</div><div class="token-fiat">≈ $233.00 AUD</div></div>
           </div>
           </div>
@@ -1043,12 +1039,12 @@
           </div>
           <div class="tx-row" data-type="out">
             <div class="tx-icon tx-out">↑</div>
-            <div class="tx-body"><div class="tx-desc">Sent to rPF…kx4</div><div class="tx-meta">27 Feb 2026 · 11:05 · Memo: invoice #44</div></div>
+            <div class="tx-body"><div class="tx-desc">Sent to private recipient</div><div class="tx-meta">27 Feb 2026 · 11:05 · Memo: invoice #44</div></div>
             <div class="tx-amount tx-out-amt">−120.00 XRP</div>
           </div>
           <div class="tx-row" data-type="in">
             <div class="tx-icon tx-in-icon">↓</div>
-            <div class="tx-body"><div class="tx-desc">Received from rHb…Th9</div><div class="tx-meta">26 Feb 2026 · 09:18</div></div>
+            <div class="tx-body"><div class="tx-desc">Received from private sender</div><div class="tx-meta">26 Feb 2026 · 09:18</div></div>
             <div class="tx-amount tx-in">+200.00 XRP</div>
           </div>
           <div class="tx-row" data-type="out">

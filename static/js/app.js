@@ -9,10 +9,13 @@ let tlConfirmInFlight = false;
 const appState = {
   username: localStorage.getItem('xrpl_username') || '',
   address: '',
+  phone: '',
   xrpBalance: 0,
   trustlines: [],
   tokenBalances: [],
   openOffers: [],
+  marketOffers: [],
+  incomingOffers: [],
   history: [],
   normalizedHistory: [],
   tokenRegistry: {},
@@ -23,9 +26,8 @@ const RIPPLE_EPOCH_OFFSET = 946684800;
 const SIDEBAR_COLLAPSED_KEY = 'xrpl_sidebar_collapsed';
 
 function shortAddress(addr) {
-  if (!addr || typeof addr !== 'string') return '—';
-  if (addr.length < 12) return addr;
-  return `${addr.slice(0, 6)}...${addr.slice(-6)}`;
+  if (!addr || typeof addr !== 'string') return 'Hidden';
+  return 'Hidden';
 }
 
 function formatNum(value, decimals = 2) {
@@ -88,6 +90,22 @@ function normalizeCurrency(value) {
   return String(value || '').trim().toUpperCase();
 }
 
+function isLikelyXrplAddress(value) {
+  const text = String(value || '').trim();
+  return text.toLowerCase().startsWith('r');
+}
+
+function requirePhoneIdentifier(value, fieldName = 'Phone number') {
+  const text = String(value || '').trim();
+  if (!text) {
+    throw new Error('field cannot be empty');
+  }
+  if (isLikelyXrplAddress(text)) {
+    throw new Error(`${fieldName}: please enter a phone number, not a wallet address.`);
+  }
+  return text;
+}
+
 function resolveIssuerClient(currency, overrideIssuer = '') {
   const upper = normalizeCurrency(currency);
   if (upper === 'XRP') return '';
@@ -143,6 +161,13 @@ function amountToDisplay(amountObj) {
   return `${formatNum(amount.value, 6).replace(/\.?0+$/, '')} ${amount.currency || ''}`.trim();
 }
 
+function formatAgeMonthsText(monthsRaw) {
+  const months = Number(monthsRaw);
+  if (!Number.isFinite(months) || months < 0) return 'Unknown';
+  if (months === 0) return '< 1 month';
+  return `${months} month(s)`;
+}
+
 function chooseTxType(txType, tx, appAddress) {
   if (txType === 'Payment') {
     if ((tx.Account || '') === appAddress) return 'out';
@@ -170,21 +195,20 @@ function normalizeHistory(historyEntries) {
       const amount = normalizeAmountValue(tx.Amount);
       amountLabel = amountToDisplay(tx.Amount);
       if ((tx.Account || '') === address) {
-        description = `Sent · ${amountLabel} to ${shortAddress(tx.Destination || '')}`;
+        description = `Sent · ${amountLabel} to private recipient`;
       } else {
-        description = `Received · ${amountLabel} from ${shortAddress(tx.Account || '')}`;
+        description = `Received · ${amountLabel} from private sender`;
       }
     } else if (txType === 'TrustSet') {
       const limitAmount = tx.LimitAmount || {};
       const currency = normalizeCurrency(limitAmount.currency || 'TOKEN');
-      const issuer = shortAddress(limitAmount.issuer || '');
-      description = `Trust line · ${currency} (${issuer})`;
+      description = `Trust line · ${currency} (provider hidden)`;
     } else if (txType === 'OfferCreate') {
       description = `Swap offer · ${amountToDisplay(tx.TakerGets)} → ${amountToDisplay(tx.TakerPays)}`;
     } else if (txType === 'OfferCancel') {
       description = `Swap offer cancelled · #${tx.OfferSequence || '—'}`;
     } else if (txType === 'EscrowCreate') {
-      description = `Scheduled payment · ${amountToDisplay(tx.Amount)} to ${shortAddress(tx.Destination || '')}`;
+      description = `Scheduled payment · ${amountToDisplay(tx.Amount)} to private recipient`;
     } else if (txType === 'EscrowFinish') {
       description = `Scheduled payment released · #${tx.OfferSequence || '—'}`;
     }
@@ -353,7 +377,7 @@ function renderEscrowHistory() {
             <div class="escrow-row-left">
               <div class="escrow-row-id">Escrow Sequence #${escrow.sequence}</div>
               <div class="escrow-row-amount">${escrow.amountLabel}</div>
-              <div class="escrow-row-dest">To: ${shortAddress(escrow.destination)}</div>
+              <div class="escrow-row-dest">To: Private recipient</div>
             </div>
             <div class="escrow-row-right">
               <span class="badge ${badgeClass}"><span class="badge-dot"></span> ${badgeText}</span>
@@ -365,7 +389,7 @@ function renderEscrowHistory() {
               <div class="detail-cell"><div class="detail-label">Amount</div><div class="detail-value">${escrow.amountLabel}</div></div>
               <div class="detail-cell"><div class="detail-label">Release date</div><div class="detail-value">${finishDate}</div></div>
               <div class="detail-cell"><div class="detail-label">Cancel deadline</div><div class="detail-value">${cancelDate}</div></div>
-              <div class="detail-cell"><div class="detail-label">Destination</div><div class="detail-value">${shortAddress(escrow.destination)}</div></div>
+              <div class="detail-cell"><div class="detail-label">Destination</div><div class="detail-value">Private recipient</div></div>
             </div>
           </div>
         </div>
@@ -392,7 +416,7 @@ function renderTokenList() {
     rows.push(`
       <div class="token-row">
         <div class="token-logo" style="background:#dbeafe;border-color:#bfdbfe;color:#1e40af">${token.currency}</div>
-        <div class="token-body"><div class="token-name">${token.currency}</div><div class="token-issuer">${shortAddress(token.issuer)}</div></div>
+        <div class="token-body"><div class="token-name">${token.currency}</div><div class="token-issuer">Provider hidden</div></div>
         <div class="token-right"><div class="token-amount">${token.balance}</div><div class="token-fiat">Limit: ${token.limit}</div></div>
       </div>
     `);
@@ -406,8 +430,9 @@ function renderOpenOffers() {
   if (!container) return;
 
   openOffers = appState.openOffers;
+  const incomingOffers = appState.incomingOffers || [];
 
-  if (openOffers.length === 0) {
+  if (openOffers.length === 0 && incomingOffers.length === 0) {
     container.innerHTML = `
       <div class="empty-state empty-state-actions">
         <button class="empty-state-action" type="button" onclick="openSwapFromDashboard()">
@@ -425,21 +450,49 @@ function renderOpenOffers() {
     return;
   }
 
-  container.innerHTML = openOffers
-    .map((offer, index) => `
-      <div class="offer-card">
-        <div class="offer-info">
-          <div class="offer-id">Offer #${offer.offer_sequence}</div>
-          <div class="offer-pair">${offer.sell.value} ${offer.sell.currency} → ${offer.buy.value} ${offer.buy.currency}</div>
-          <div class="offer-time">Status: ${offer.status}</div>
-        </div>
-        <div class="offer-actions">
-          <span class="badge badge-open"><span class="badge-dot"></span> ${offer.status}</span>
-          <button class="btn-sm" onclick="cancelOfferById(${index})">Cancel</button>
-        </div>
-      </div>
-    `)
-    .join('');
+  const myOffersHtml = openOffers.length
+    ? openOffers
+        .map((offer) => `
+          <div class="offer-card">
+            <div class="offer-info">
+              <div class="offer-id">Offer #${offer.offer_sequence}</div>
+              <div class="offer-pair">${offer.sell.value} ${offer.sell.currency} → ${offer.buy.value} ${offer.buy.currency}</div>
+              <div class="offer-time">Status: ${offer.status}</div>
+            </div>
+            <div class="offer-actions">
+              <span class="badge badge-open"><span class="badge-dot"></span> ${offer.status}</span>
+              <button class="btn-sm" onclick="viewOfferDetails(${offer.offer_sequence})">Details</button>
+              <button class="btn-sm" onclick="cancelOfferBySequence(${offer.offer_sequence})">Cancel</button>
+            </div>
+          </div>
+        `)
+        .join('')
+    : '<div class="notice">No outgoing swaps from your wallet right now.</div>';
+
+  const incomingOffersHtml = incomingOffers.length
+    ? incomingOffers
+        .map((offer) => `
+          <div class="offer-card">
+            <div class="offer-info">
+              <div class="offer-id">Incoming #${offer.offer_sequence}</div>
+              <div class="offer-pair">${offer.owner_give.value} ${offer.owner_give.currency} → ${offer.owner_want.value} ${offer.owner_want.currency}</div>
+              <div class="offer-time">Public XRPL order book</div>
+            </div>
+            <div class="offer-actions">
+              <span class="badge badge-open"><span class="badge-dot"></span> open</span>
+              <button class="btn-sm" onclick="takeIncomingOfferBySequence(${offer.offer_sequence})">Take</button>
+            </div>
+          </div>
+        `)
+        .join('')
+    : '<div class="notice">No incoming public swaps currently visible for supported pairs.</div>';
+
+  container.innerHTML = `
+    <div style="font-size:12px;color:var(--muted);font-weight:700;margin-bottom:8px;">My outgoing swaps</div>
+    ${myOffersHtml}
+    <div style="font-size:12px;color:var(--muted);font-weight:700;margin:16px 0 8px;">Incoming swaps you can take</div>
+    ${incomingOffersHtml}
+  `;
 }
 
 function openSwapFromDashboard() {
@@ -453,7 +506,7 @@ function openTokenEnableFromDashboard() {
 }
 
 function renderSummary() {
-  const addr = appState.address || '—';
+  const privateIdentifier = appState.phone || 'No phone linked';
   const balance = `${formatNum(appState.xrpBalance, 6).replace(/\.?0+$/, '')} XRP`;
 
   const dashboardAddr = document.getElementById('dashboard-wallet-address');
@@ -461,18 +514,17 @@ function renderSummary() {
   const walletMainAddr = document.getElementById('wallet-main-address');
   const walletTotalBal = document.getElementById('wallet-total-balance');
 
-  if (dashboardAddr) dashboardAddr.textContent = addr;
+  if (dashboardAddr) dashboardAddr.textContent = privateIdentifier;
   if (dashboardBal) dashboardBal.textContent = balance;
   if (walletTotalBal) walletTotalBal.innerHTML = `${formatNum(appState.xrpBalance, 6).replace(/\.?0+$/, '')} <span style="font-size:22px;opacity:0.5">XRP</span>`;
 
   if (walletMainAddr) {
-    walletMainAddr.innerHTML = `<span>${addr}</span><span style="font-size:10px">⧉</span>`;
+    const phoneEl = walletMainAddr.querySelector('.account-phone-display');
+    if (phoneEl) phoneEl.textContent = privateIdentifier;
   }
 
-  document.querySelectorAll('span').forEach((el) => {
-    if (el.textContent === 'rConnected...abc') {
-      el.textContent = shortAddress(addr);
-    }
+  document.querySelectorAll('.account-phone-display').forEach((el) => {
+    el.textContent = privateIdentifier;
   });
 
   trustlineSet = appState.trustlines.some((line) => normalizeCurrency(line.currency) !== 'XRP');
@@ -531,6 +583,7 @@ async function loadTokenRegistry() {
 async function refreshSummary() {
   const data = await apiGet('/api/wallet/summary', { username: getRequiredUsername() });
   appState.address = data.address || '';
+  appState.phone = data.phone || '';
   appState.xrpBalance = Number(data.xrp_balance || 0);
   appState.tokenBalances = data.token_balances || [];
   appState.trustlines = data.trustlines || [];
@@ -561,8 +614,120 @@ async function refreshOpenOffers() {
   renderOpenOffers();
 }
 
+async function refreshIncomingOffers() {
+  const data = await apiGet('/api/trade/incoming', {
+    username: getRequiredUsername(),
+    limit: 20,
+    per_book_limit: 6,
+  });
+  appState.incomingOffers = data.offers || [];
+  renderOpenOffers();
+}
+
+function getTradePairQuery() {
+  const sellCurrency = normalizeCurrency(document.getElementById('sell-currency')?.value);
+  const buyCurrency = normalizeCurrency(document.getElementById('buy-currency')?.value);
+  const sellIssuerPhone = (document.getElementById('sell-issuer')?.value || '').trim();
+  const buyIssuerPhone = (document.getElementById('buy-issuer')?.value || '').trim();
+
+  if (!sellCurrency || !buyCurrency) return null;
+
+  const query = {
+    username: getRequiredUsername(),
+    sell_currency: sellCurrency,
+    buy_currency: buyCurrency,
+    limit: 10,
+  };
+  if (sellIssuerPhone) query.sell_issuer_phone = sellIssuerPhone;
+  if (buyIssuerPhone) query.buy_issuer_phone = buyIssuerPhone;
+  return query;
+}
+
+function renderMarketOffers(message = '') {
+  const noteEl = document.getElementById('trade-market-note');
+  const listEl = document.getElementById('trade-market-offers-list');
+  if (!noteEl || !listEl) return;
+
+  if (message) {
+    noteEl.textContent = message;
+  } else if ((appState.marketOffers || []).length === 0) {
+    noteEl.textContent = 'No matching public offers found right now.';
+  } else {
+    noteEl.textContent = `${appState.marketOffers.length} public offer(s) available.`;
+  }
+
+  if (!appState.marketOffers || appState.marketOffers.length === 0) {
+    listEl.innerHTML = '';
+    return;
+  }
+
+  listEl.innerHTML = appState.marketOffers
+    .map((offer, index) => `
+      <div class="offer-card">
+        <div class="offer-info">
+          <div class="offer-id">Market Offer #${offer.offer_sequence}</div>
+          <div class="offer-pair">${offer.owner_give.value} ${offer.owner_give.currency} → ${offer.owner_want.value} ${offer.owner_want.currency}</div>
+          <div class="offer-time">Owner: hidden</div>
+        </div>
+        <div class="offer-actions">
+          <button class="btn-sm" onclick="takeMarketOffer(${index})">Take</button>
+        </div>
+      </div>
+    `)
+    .join('');
+}
+
+async function refreshMarketOffers() {
+  const query = getTradePairQuery();
+  if (!query) return;
+
+  try {
+    const data = await apiGet('/api/trade/book', query);
+    appState.marketOffers = data.offers || [];
+    renderMarketOffers();
+  } catch (error) {
+    appState.marketOffers = [];
+    renderMarketOffers(error.message || 'Unable to load market offers for this pair.');
+  }
+}
+
+async function takeMarketOffer(index) {
+  const offer = (appState.marketOffers || [])[index];
+  if (!offer) return;
+  await takeOffer(offer);
+}
+
+async function takeIncomingOfferBySequence(offerSequence) {
+  const offer = (appState.incomingOffers || []).find((item) => Number(item.offer_sequence) === Number(offerSequence));
+  if (!offer) return;
+  await takeOffer(offer);
+}
+
+async function takeOffer(offer) {
+  try {
+    const payload = {
+      username: getRequiredUsername(),
+      owner_give_currency: offer.owner_give.currency,
+      owner_give_issuer: offer.owner_give.issuer || '',
+      owner_give_amount: offer.owner_give.value,
+      owner_want_currency: offer.owner_want.currency,
+      owner_want_issuer: offer.owner_want.issuer || '',
+      owner_want_amount: offer.owner_want.value,
+    };
+
+    const data = await apiPost('/api/trade/take', payload);
+    setTradeMessage(`Offer taken. TX: ${data.tx_hash || 'submitted'}`);
+    await refreshAllData();
+    await refreshMarketOffers();
+    await refreshIncomingOffers();
+  } catch (error) {
+    setTradeMessage(error.message || 'Unable to take offer.', true);
+    alert(error.message || 'Unable to take offer.');
+  }
+}
+
 async function refreshAllData() {
-  await Promise.all([refreshSummary(), refreshHistory(), refreshOpenOffers()]);
+  await Promise.all([refreshSummary(), refreshHistory(), refreshOpenOffers(), refreshIncomingOffers()]);
 }
 
 async function initApp() {
@@ -577,6 +742,7 @@ async function initApp() {
   try {
     await loadTokenRegistry();
     await refreshAllData();
+    await refreshMarketOffers();
   } catch (error) {
     alert(error.message || 'Failed to initialize dashboard data.');
   }
@@ -596,6 +762,7 @@ async function initApp() {
     sellCurrencySelect.addEventListener('change', () => {
       syncTradeIssuerFields();
       checkCurrencyGate('trade');
+      refreshMarketOffers();
     });
   }
 
@@ -604,6 +771,21 @@ async function initApp() {
     buyCurrencySelect.addEventListener('change', () => {
       syncTradeIssuerFields();
       checkCurrencyGate('trade');
+      refreshMarketOffers();
+    });
+  }
+
+  const sellIssuerInput = document.getElementById('sell-issuer');
+  if (sellIssuerInput) {
+    sellIssuerInput.addEventListener('blur', () => {
+      refreshMarketOffers();
+    });
+  }
+
+  const buyIssuerInput = document.getElementById('buy-issuer');
+  if (buyIssuerInput) {
+    buyIssuerInput.addEventListener('blur', () => {
+      refreshMarketOffers();
     });
   }
 }
@@ -627,9 +809,7 @@ function syncSendIssuerField() {
   }
 
   issuerGroup.style.display = 'block';
-  if (!issuerInput.value.trim()) {
-    issuerInput.value = appState.tokenRegistry[currency] || '';
-  }
+  issuerInput.placeholder = 'Optional provider phone number override';
 }
 
 function syncTradeIssuerFields() {
@@ -647,7 +827,7 @@ function syncTradeIssuerFields() {
       sellInput.value = '';
     } else {
       sellGroup.style.display = 'block';
-      if (!sellInput.value.trim()) sellInput.value = appState.tokenRegistry[sellCurrency] || '';
+      sellInput.placeholder = 'Optional provider phone number override';
     }
   }
 
@@ -657,7 +837,7 @@ function syncTradeIssuerFields() {
       buyInput.value = '';
     } else {
       buyGroup.style.display = 'block';
-      if (!buyInput.value.trim()) buyInput.value = appState.tokenRegistry[buyCurrency] || '';
+      buyInput.placeholder = 'Optional provider phone number override';
     }
   }
 }
@@ -666,6 +846,7 @@ function requireTrustline(page) {
   showPage(page);
   if (page === 'trade') resetTrade();
   checkCurrencyGate(page);
+  if (page === 'trade') refreshMarketOffers();
 }
 
 function checkCurrencyGate(page) {
@@ -675,18 +856,15 @@ function checkCurrencyGate(page) {
   if (page === 'trade') {
     const sellCurrency = normalizeCurrency(document.getElementById('sell-currency')?.value);
     const buyCurrency = normalizeCurrency(document.getElementById('buy-currency')?.value);
-    const sellIssuer = resolveIssuerClient(sellCurrency, document.getElementById('sell-issuer')?.value || '');
-    const buyIssuer = resolveIssuerClient(buyCurrency, document.getElementById('buy-issuer')?.value || '');
 
-    const sellNeedsTrustline = sellCurrency !== 'XRP' && !hasTrustlineFor(sellCurrency, sellIssuer);
-    const buyNeedsTrustline = buyCurrency !== 'XRP' && !hasTrustlineFor(buyCurrency, buyIssuer);
+    const sellNeedsTrustline = sellCurrency !== 'XRP' && !hasTrustlineFor(sellCurrency);
+    const buyNeedsTrustline = buyCurrency !== 'XRP' && !hasTrustlineFor(buyCurrency);
     gate.style.display = sellNeedsTrustline || buyNeedsTrustline ? 'flex' : 'none';
   }
 
   if (page === 'send') {
     const currency = normalizeCurrency(document.getElementById('send-currency')?.value);
-    const issuer = resolveIssuerClient(currency, document.getElementById('send-issuer')?.value || '');
-    const needsGate = currency !== 'XRP' && !hasTrustlineFor(currency, issuer);
+    const needsGate = currency !== 'XRP' && !hasTrustlineFor(currency);
     gate.style.display = needsGate ? 'flex' : 'none';
   }
 }
@@ -764,7 +942,7 @@ function tlResetFlow(clearInputs = false) {
     const confirmIssuer = document.getElementById('tl-confirm-issuer');
     const destCurrency = document.getElementById('tl-dest-currency');
     if (confirmCurrency) confirmCurrency.textContent = 'USD';
-    if (confirmIssuer) confirmIssuer.textContent = 'r...abc';
+    if (confirmIssuer) confirmIssuer.textContent = 'Hidden';
     if (destCurrency) destCurrency.textContent = 'your currency';
   }
 
@@ -777,17 +955,24 @@ function tlCancelFlow() {
 }
 
 async function tlGoToVerify() {
-  const issuer = (document.getElementById('tl-issuer')?.value || '').trim();
+  let issuerPhone = '';
   const currency = normalizeCurrency(document.getElementById('tl-currency')?.value || 'USD');
   const limit = (document.getElementById('tl-limit')?.value || '1000000').trim() || '1000000';
 
-  if (!issuer || !currency) {
+  try {
+    issuerPhone = requirePhoneIdentifier(document.getElementById('tl-issuer')?.value || '', 'Provider phone');
+  } catch (error) {
+    alert(error.message || 'field cannot be empty');
+    return;
+  }
+
+  if (!currency) {
     alert('field cannot be empty');
     return;
   }
 
   tlSetStep(2);
-  document.getElementById('tl-verify-issuer-display').textContent = issuer;
+  document.getElementById('tl-verify-issuer-display').textContent = issuerPhone;
   document.getElementById('tl-verify-currency-display').textContent = currency;
   document.getElementById('tl-verify-results').style.display = 'none';
   document.getElementById('tl-verify-verdict').style.display = 'none';
@@ -796,11 +981,11 @@ async function tlGoToVerify() {
   try {
     const data = await apiPost('/api/trustline/check-issuer', {
       username: getRequiredUsername(),
-      issuer,
+      issuer_phone: issuerPhone,
       currency,
     });
 
-    window.__tlDraft = { issuer, currency, limit };
+    window.__tlDraft = { issuerPhone, currency, limit };
     showIssuerResults(data, currency);
   } catch (error) {
     document.getElementById('tl-verify-loading').style.display = 'none';
@@ -824,7 +1009,7 @@ function showIssuerResults(data, currency) {
 
   setTlVerifyCheck('validity', data.valid, data.valid ? 'This issuer account exists on XRPL.' : 'This issuer account was not found on XRPL.');
   setTlVerifyCheck('blacklist', !data.blacklisted, data.blacklisted ? 'This issuer is flagged as high risk.' : 'This issuer is not in the known-risk list.');
-  setTlVerifyCheck('age', Number(data.age_months || 0) >= 6, `Estimated account age: ${data.age_months || 0} month(s).`);
+  setTlVerifyCheck('age', Number(data.age_months || 0) >= 6, `Estimated account age: ${formatAgeMonthsText(data.age_months)}.`);
   setTlVerifyCheck('currency', !!data.issues_currency, data.issues_currency ? `Issuer appears to issue ${currency}.` : `No clear evidence this issuer issues ${currency}.`);
 
   const box = document.getElementById('tl-verdict-box');
@@ -873,11 +1058,18 @@ async function tlConfirm() {
   if (tlConfirmInFlight) return;
 
   const draft = window.__tlDraft || {};
-  const issuer = draft.issuer || (document.getElementById('tl-issuer')?.value || '').trim();
+  let issuerPhone = draft.issuerPhone || '';
   const currency = normalizeCurrency(draft.currency || document.getElementById('tl-currency')?.value || 'USD');
   const limit = String(draft.limit || document.getElementById('tl-limit')?.value || '1000000').trim() || '1000000';
 
-  if (!issuer || !currency) {
+  try {
+    issuerPhone = requirePhoneIdentifier(issuerPhone || (document.getElementById('tl-issuer')?.value || ''), 'Provider phone');
+  } catch (error) {
+    alert(error.message || 'field cannot be empty');
+    return;
+  }
+
+  if (!currency) {
     alert('field cannot be empty');
     return;
   }
@@ -892,12 +1084,12 @@ async function tlConfirm() {
   try {
     await apiPost('/api/trustline/create', {
       username: getRequiredUsername(),
-      issuer,
+      issuer_phone: issuerPhone,
       currency,
       limit,
     });
 
-    setTrustlineDone(currency, issuer);
+    setTrustlineDone(currency, issuerPhone);
     await refreshAllData();
   } catch (error) {
     alert(error.message || 'Failed to create trustline.');
@@ -913,7 +1105,7 @@ function submitTrustline() {
   tlGoToVerify();
 }
 
-function setTrustlineDone(currency, issuer) {
+function setTrustlineDone(currency, issuerPhone) {
   trustlineSet = true;
 
   const cur = document.getElementById('tl-confirm-currency');
@@ -921,7 +1113,7 @@ function setTrustlineDone(currency, issuer) {
   const destCur = document.getElementById('tl-dest-currency');
 
   if (cur) cur.textContent = currency || 'USD';
-  if (iss) iss.textContent = issuer || 'r...';
+  if (iss) iss.textContent = issuerPhone || 'Hidden';
   if (destCur) destCur.textContent = currency || 'USD';
 
   tlSetStep(3);
@@ -971,17 +1163,18 @@ function renderOverallVerdict(prefix, risk, currency) {
   desc.textContent = 'Destination failed one or more critical checks.';
 }
 
-async function runAddressCheck(inputAddress, currency, issuer, useTrustlinePrefix = false) {
+async function runAddressCheck(inputPhone, currency, issuer, useTrustlinePrefix = false, issuerPhone = '') {
   const data = await apiPost('/api/check-address', {
-    address: inputAddress,
+    phone: inputPhone,
     currency,
     issuer,
+    issuer_phone: issuerPhone,
   });
 
   if (!useTrustlinePrefix) {
-    setCheck('validity', !!data.valid, data.valid ? 'This address exists on XRPL.' : 'This address does not appear to exist on XRPL.');
-    setCheck('age', Number(data.age_months || 0) >= 6, `Estimated account age: ${data.age_months || 0} month(s).`);
-    setCheck('blacklist', !data.blacklisted, data.blacklisted ? 'Address appears in known risk list.' : 'Address is not in the known risk list.');
+    setCheck('validity', !!data.valid, data.valid ? 'This recipient account exists on XRPL.' : 'This recipient account does not appear to exist on XRPL.');
+    setCheck('age', Number(data.age_months || 0) >= 6, `Estimated account age: ${formatAgeMonthsText(data.age_months)}.`);
+    setCheck('blacklist', !data.blacklisted, data.blacklisted ? 'Recipient appears in known risk list.' : 'Recipient is not in the known risk list.');
     setCheck('activity', Number(data.tx_count || 0) >= 10, `Estimated transaction count: ${data.tx_count || 0}.`);
 
     const label = document.getElementById('chk-trustline-currency');
@@ -1004,9 +1197,9 @@ async function runAddressCheck(inputAddress, currency, issuer, useTrustlinePrefi
     desc.textContent = text;
   };
 
-  setTlRow('validity', !!data.valid, data.valid ? 'This address exists on XRPL.' : 'This address does not exist on XRPL.');
-  setTlRow('age', Number(data.age_months || 0) >= 6, `Estimated account age: ${data.age_months || 0} month(s).`);
-  setTlRow('blacklist', !data.blacklisted, data.blacklisted ? 'Address appears in known risk list.' : 'Address is not in known risk lists.');
+  setTlRow('validity', !!data.valid, data.valid ? 'This recipient account exists on XRPL.' : 'This recipient account does not exist on XRPL.');
+  setTlRow('age', Number(data.age_months || 0) >= 6, `Estimated account age: ${formatAgeMonthsText(data.age_months)}.`);
+  setTlRow('blacklist', !data.blacklisted, data.blacklisted ? 'Recipient appears in known risk list.' : 'Recipient is not in known risk lists.');
   setTlRow('activity', Number(data.tx_count || 0) >= 10, `Estimated transaction count: ${data.tx_count || 0}.`);
 
   const tlOk = currency === 'XRP' ? true : !!data.has_trustline;
@@ -1021,22 +1214,34 @@ async function runAddressCheck(inputAddress, currency, issuer, useTrustlinePrefi
 }
 
 async function runAuthCheck() {
-  const input = (document.getElementById('auth-input')?.value || '').trim();
-  if (!input) {
-    alert('field cannot be empty');
+  let inputPhone = '';
+  try {
+    inputPhone = requirePhoneIdentifier(document.getElementById('auth-input')?.value || '', 'Recipient phone');
+  } catch (error) {
+    alert(error.message || 'field cannot be empty');
     return;
   }
 
   const currency = normalizeCurrency(document.getElementById('send-currency')?.value || 'XRP');
-  const issuer = resolveIssuerClient(currency, document.getElementById('send-issuer')?.value || '');
+  const issuerInput = (document.getElementById('send-issuer')?.value || '').trim();
+  let issuerPhone = '';
+  if (issuerInput) {
+    try {
+      issuerPhone = requirePhoneIdentifier(issuerInput, 'Provider phone override');
+    } catch (error) {
+      alert(error.message || 'Invalid provider phone.');
+      return;
+    }
+  }
+  const issuer = issuerPhone ? '' : resolveIssuerClient(currency, '');
 
   document.getElementById('auth-loading').style.display = 'block';
   document.getElementById('auth-result').classList.remove('visible');
 
   try {
-    await runAddressCheck(input, currency, issuer, false);
+    await runAddressCheck(inputPhone, currency, issuer, false, issuerPhone);
   } catch (error) {
-    alert(error.message || 'Failed to check address.');
+    alert(error.message || 'Failed to check recipient.');
   } finally {
     document.getElementById('auth-loading').style.display = 'none';
   }
@@ -1047,22 +1252,34 @@ function showAuthResults(_address) {
 }
 
 async function runTlAuthCheck() {
-  const input = (document.getElementById('tl-auth-input')?.value || '').trim();
-  if (!input) {
-    alert('field cannot be empty');
+  let inputPhone = '';
+  try {
+    inputPhone = requirePhoneIdentifier(document.getElementById('tl-auth-input')?.value || '', 'Recipient phone');
+  } catch (error) {
+    alert(error.message || 'field cannot be empty');
     return;
   }
 
   const currency = normalizeCurrency(document.getElementById('tl-dest-currency')?.textContent || 'XRP');
-  const issuer = (window.__tlDraft && window.__tlDraft.issuer) || (document.getElementById('tl-issuer')?.value || '').trim();
+  let issuerPhone =
+    (window.__tlDraft && window.__tlDraft.issuerPhone) ||
+    (document.getElementById('tl-issuer')?.value || '').trim();
+  if (issuerPhone) {
+    try {
+      issuerPhone = requirePhoneIdentifier(issuerPhone, 'Provider phone');
+    } catch (error) {
+      alert(error.message || 'Invalid provider phone.');
+      return;
+    }
+  }
 
   document.getElementById('tl-auth-loading').style.display = 'block';
   document.getElementById('tl-auth-result').classList.remove('visible');
 
   try {
-    await runAddressCheck(input, currency, issuer, true);
+    await runAddressCheck(inputPhone, currency, '', true, issuerPhone);
   } catch (error) {
-    alert(error.message || 'Failed to check destination address.');
+    alert(error.message || 'Failed to check destination recipient.');
   } finally {
     document.getElementById('tl-auth-loading').style.display = 'none';
   }
@@ -1121,6 +1338,9 @@ function renderTradeStepProgress(status) {
 }
 
 function showTradeScreen(n) {
+  if (n === 2 || n === 3) {
+    n = 4;
+  }
   document.querySelectorAll('.trade-screen').forEach((s) => {
     s.style.display = 'none';
   });
@@ -1159,8 +1379,14 @@ async function startTradeFlow() {
   }
 
   try {
-    const giveIssuer = resolveIssuerClient(tradeData.sellCurrency, tradeData.sellIssuer);
-    const wantIssuer = resolveIssuerClient(tradeData.buyCurrency, tradeData.buyIssuer);
+    let giveIssuerPhone = '';
+    let wantIssuerPhone = '';
+    if (tradeData.sellIssuer) {
+      giveIssuerPhone = requirePhoneIdentifier(tradeData.sellIssuer, 'Sell provider phone override');
+    }
+    if (tradeData.buyIssuer) {
+      wantIssuerPhone = requirePhoneIdentifier(tradeData.buyIssuer, 'Buy provider phone override');
+    }
 
     const payload = {
       username: getRequiredUsername(),
@@ -1168,8 +1394,8 @@ async function startTradeFlow() {
       give_amount: tradeData.sellAmount,
       want_currency: tradeData.buyCurrency,
       want_amount: tradeData.buyAmount,
-      give_issuer: giveIssuer || undefined,
-      want_issuer: wantIssuer || undefined,
+      give_issuer_phone: giveIssuerPhone || undefined,
+      want_issuer_phone: wantIssuerPhone || undefined,
     };
 
     const response = await apiPost('/api/trade/create', payload);
@@ -1178,21 +1404,14 @@ async function startTradeFlow() {
     tradeData.txHash = response.tx_hash || '—';
     tradeData.offerId = `#${response.offer_sequence}`;
 
-    appState.activeTrade = {
-      offerSequence: response.offer_sequence,
-      txHash: response.tx_hash || null,
-    };
-
-    document.getElementById('s2-offer-id').textContent = `#${response.offer_sequence}`;
-    document.getElementById('s2-sell').textContent = `${tradeData.sellAmount} ${tradeData.sellCurrency}`;
-    document.getElementById('s2-buy').textContent = `${tradeData.buyAmount} ${tradeData.buyCurrency}`;
-    document.getElementById('s2-time').textContent = tradeData.time;
-    document.getElementById('s2-ledger').textContent = 'Offer submitted';
-
-    showTradeScreen(2);
-    renderTradeStepProgress('submitted');
-    startTradePolling();
-    setTradeMessage('Trade offer submitted to XRPL. Polling status...');
+    appState.activeTrade = null;
+    stopTradePolling();
+    populateConfirm({
+      tx_hash: response.tx_hash || '—',
+      last_ledger: `REF #${response.offer_sequence || '—'}`,
+    });
+    showTradeScreen(4);
+    setTradeMessage('Trade signed and submitted. Auto-completed in demo mode.');
 
     await refreshAllData();
   } catch (error) {
@@ -1316,7 +1535,7 @@ function goTradeScreen(n) {
   }
 
   if (n === 4) {
-    checkTradeCompletion();
+    showTradeScreen(4);
     return;
   }
 
@@ -1361,11 +1580,15 @@ async function cancelOffer() {
 async function cancelOfferById(index) {
   const offer = openOffers[index];
   if (!offer) return;
+  await cancelOfferBySequence(offer.offer_sequence);
+}
 
+async function cancelOfferBySequence(offerSequence) {
+  if (!offerSequence) return;
   try {
     await apiPost('/api/trade/cancel', {
       username: getRequiredUsername(),
-      offer_sequence: offer.offer_sequence,
+      offer_sequence: offerSequence,
     });
 
     await refreshAllData();
@@ -1374,14 +1597,54 @@ async function cancelOfferById(index) {
   }
 }
 
+async function viewOfferDetails(offerSequence) {
+  const offer = (appState.openOffers || []).find((item) => Number(item.offer_sequence) === Number(offerSequence));
+  if (!offer) return;
+
+  tradeData.offerSequence = offer.offer_sequence;
+  tradeData.sellCurrency = offer.sell.currency;
+  tradeData.sellAmount = offer.sell.value;
+  tradeData.buyCurrency = offer.buy.currency;
+  tradeData.buyAmount = offer.buy.value;
+  tradeData.time = new Date().toLocaleTimeString();
+  tradeData.txHash = '—';
+
+  appState.activeTrade = null;
+
+  populateConfirm({
+    tx_hash: tradeData.txHash || '—',
+    last_ledger: `Offer status: ${offer.status || 'open'}`,
+  });
+
+  showPage('trade');
+  showTradeScreen(4);
+  setTradeMessage(`Showing details for offer #${offer.offer_sequence}.`);
+}
+
 async function sendCurrency() {
-  const destination = (document.getElementById('send-destination')?.value || '').trim();
+  let destinationPhone = '';
+  try {
+    destinationPhone = requirePhoneIdentifier(document.getElementById('send-destination')?.value || '', 'Recipient phone');
+  } catch (error) {
+    alert(error.message || 'field cannot be empty');
+    return;
+  }
+
   const currency = normalizeCurrency(document.getElementById('send-currency')?.value || 'XRP');
   const amount = (document.getElementById('send-amount')?.value || '').trim();
-  const issuerInput = (document.getElementById('send-issuer')?.value || '').trim();
-  const issuer = resolveIssuerClient(currency, issuerInput);
+  const issuerInputRaw = (document.getElementById('send-issuer')?.value || '').trim();
+  let issuerPhone = '';
+  if (issuerInputRaw) {
+    try {
+      issuerPhone = requirePhoneIdentifier(issuerInputRaw, 'Provider phone override');
+    } catch (error) {
+      alert(error.message || 'Invalid provider phone.');
+      return;
+    }
+  }
+  const issuer = issuerPhone ? '' : resolveIssuerClient(currency, '');
 
-  if (!destination || !amount) {
+  if (!amount) {
     alert('field cannot be empty');
     return;
   }
@@ -1395,13 +1658,14 @@ async function sendCurrency() {
 
   try {
     const check = await apiPost('/api/check-address', {
-      address: destination,
+      phone: destinationPhone,
       currency,
       issuer,
+      issuer_phone: issuerPhone || undefined,
     });
 
     if (!check.valid) {
-      throw new Error('Destination address is not valid on XRPL.');
+      throw new Error('Recipient account is not valid on XRPL.');
     }
 
     if (currency !== 'XRP' && !check.has_trustline) {
@@ -1411,10 +1675,11 @@ async function sendCurrency() {
     const endpoint = currency === 'XRP' ? '/api/xrp/send' : '/api/token/send';
     const payload = {
       username: getRequiredUsername(),
-      destination,
+      destination_phone: destinationPhone,
       amount,
       currency,
       issuer,
+      issuer_phone: issuerPhone || undefined,
     };
 
     const data = await apiPost(endpoint, payload);
@@ -1455,8 +1720,8 @@ function walletSwitchPanel(id, btn) {
 }
 
 function copyWalletAddress() {
-  const addr = appState.address || 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh';
-  navigator.clipboard.writeText(addr).catch(() => {});
+  const identifier = appState.phone || '';
+  if (identifier) navigator.clipboard.writeText(identifier).catch(() => {});
   document.querySelectorAll('.balance-address, .hash-box').forEach((el) => {
     const originalColor = el.style.color;
     el.style.color = '#166534';
@@ -1562,7 +1827,7 @@ function topupPaySuccess() {
   const txId = `TXN-${Math.random().toString(36).substr(2, 10).toUpperCase()}`;
   const newBal = (appState.xrpBalance + Number(xrp)).toFixed(2);
 
-  document.getElementById('topup-success-msg').textContent = `${xrp} XRP added to your wallet.`;
+  document.getElementById('topup-success-msg').textContent = `${xrp} XRP added successfully.`;
   document.getElementById('topup-success-tx').textContent = txId;
   document.getElementById('topup-success-bal').textContent = `${newBal} XRP`;
   goTopupScreen(4);
